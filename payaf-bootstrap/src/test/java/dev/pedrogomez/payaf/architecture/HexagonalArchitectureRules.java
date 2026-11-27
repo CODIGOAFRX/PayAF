@@ -13,6 +13,13 @@ import com.tngtech.archunit.lang.ArchRule;
  * ({@code dev.pedrogomez.payaf}) y {@link HexagonalArchitectureRulesTest} las aplica
  * sobre clases fixture con la misma estructura de paquetes para demostrar que cada
  * regla falla cuando se viola. Así las dos suites evalúan exactamente la misma regla.
+ * <p>
+ * Las reglas del dominio ya no admiten estar vacías: el dominio tiene clases desde la
+ * fase 2 y, si un día la regla no encontrara ninguna (por un paquete mal escrito, por
+ * ejemplo), debe fallar en lugar de pasar sin comprobar nada. Las fixtures siempre
+ * incluyen una clase de dominio ({@code CleanMoney}), así que no les afecta. Las reglas de
+ * la aplicación y de los adaptadores siguen con {@code allowEmptyShould(true)} hasta que
+ * esas capas tengan clases.
  */
 final class HexagonalArchitectureRules {
 
@@ -25,16 +32,14 @@ final class HexagonalArchitectureRules {
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "org.springframework..", "jakarta..", "javax.persistence..",
                         "com.fasterxml..", "tools.jackson..")
-                .because("el dominio es Java puro")
-                .allowEmptyShould(true);
+                .because("el dominio es Java puro");
     }
 
     static ArchRule domainDoesNotDependOnOuterLayers(String root) {
         return noClasses()
                 .that().resideInAPackage(domain(root))
                 .should().dependOnClassesThat().resideInAnyPackage(application(root), adapter(root))
-                .because("el dominio es el centro del hexágono y no conoce las capas externas")
-                .allowEmptyShould(true);
+                .because("el dominio es el centro del hexágono y no conoce las capas externas");
     }
 
     static ArchRule applicationDoesNotDependOnAdaptersOrSpring(String root) {

@@ -11,7 +11,8 @@ import com.tngtech.archunit.lang.ArchRule;
  * <p>
  * Las reglas viven en {@link HexagonalArchitectureRules} para poder comprobar, con
  * fixtures, que de verdad detectan las violaciones ({@link HexagonalArchitectureRulesTest}).
- * Mientras no haya clases, las reglas se permiten vacías ({@code allowEmptyShould}).
+ * Las reglas del dominio exigen encontrar clases; las de la aplicación y los adaptadores
+ * se permiten vacías ({@code allowEmptyShould}) mientras esas capas no tengan código.
  */
 @AnalyzeClasses(packages = HexagonalArchitectureTest.ROOT, importOptions = ImportOption.DoNotIncludeTests.class)
 class HexagonalArchitectureTest {
