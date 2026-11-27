@@ -170,7 +170,7 @@ class PaymentInvariantsPropertiesTest {
         // Todo estado alcanzable con métodos de negocio se puede guardar y volver a cargar.
         Payment reloaded = Payment.rehydrate(p.id(), p.request(), p.status(), p.attempts(),
                 p.authorizedBy().orElse(null), p.gatewayReference().orElse(null), p.failureReason().orElse(null),
-                p.refundedAmount(), p.refunds(), p.createdAt(), p.updatedAt());
+                p.refundedAmount(), p.refunds(), p.createdAt(), p.updatedAt(), 0L);
         assertThat(PaymentTransitionMatrixTest.Snapshot.of(reloaded))
                 .isEqualTo(PaymentTransitionMatrixTest.Snapshot.of(p));
         assertThat(reloaded.pullEvents()).isEmpty();
@@ -340,7 +340,7 @@ class PaymentInvariantsPropertiesTest {
     private static Payment reload(Payment p) {
         return Payment.rehydrate(p.id(), p.request(), p.status(), p.attempts(), p.authorizedBy().orElse(null),
                 p.gatewayReference().orElse(null), p.failureReason().orElse(null), p.refundedAmount(), p.refunds(),
-                p.createdAt(), p.updatedAt());
+                p.createdAt(), p.updatedAt(), 0L);
     }
 
     // ---------------------------------------------------------------------------------

@@ -305,7 +305,7 @@ class PaymentTransitionMatrixTest {
         };
         return Payment.rehydrate(id(), request(), status, List.of(),
                 authorized ? GW : null, authorized ? "ref-1" : null, status == FAILED ? "todas caídas" : null,
-                Money.of(refunded, Currency.EUR), TestRefs.refundsFor(Money.of(refunded, Currency.EUR)), T0, T0.plusSeconds(1));
+                Money.of(refunded, Currency.EUR), TestRefs.refundsFor(Money.of(refunded, Currency.EUR)), T0, T0.plusSeconds(1), 0L);
     }
 
     /** Todo lo observable del pago, para comprobar que una operación rechazada no lo toca. */

@@ -34,6 +34,12 @@ public class ApplicationException extends RuntimeException {
     public static final String AUTHORIZATION_UNRECORDED = "AUTHORIZATION_UNRECORDED";
     /** Otra petición ha modificado el pago entre que se cargó y se guardó (ver {@link ConcurrentPaymentModificationException}). */
     public static final String CONCURRENT_MODIFICATION = "CONCURRENT_MODIFICATION";
+    /**
+     * La PSP aprobó una captura, reembolso o anulación, pero no se pudo apuntar en el pago tras
+     * varios intentos por modificaciones concurrentes. La operación SÍ se ha hecho en la PSP: el
+     * mensaje lleva su referencia para conciliarla.
+     */
+    public static final String OPERATION_UNRECORDED = "OPERATION_UNRECORDED";
 
     private final String code;
 
@@ -67,6 +73,14 @@ public class ApplicationException extends RuntimeException {
         return new ApplicationException(AUTHORIZATION_UNRECORDED,
                 "La pasarela " + gateway + " aprobó el pago " + id + " (referencia " + gatewayReference
                         + ") pero no se pudo registrar la autorización; queda PENDING para reconciliar");
+    }
+
+    public static ApplicationException operationUnrecorded(String operation, PaymentId id, GatewayId gateway,
+                                                           String gatewayReference, int attempts) {
+        return new ApplicationException(OPERATION_UNRECORDED,
+                "La pasarela " + gateway + " aprobó la operación " + operation + " del pago " + id
+                        + " (referencia " + gatewayReference + ") pero no se pudo registrar tras " + attempts
+                        + " intentos por modificaciones concurrentes; hay que conciliarla con la PSP");
     }
 
     public static ApplicationException gatewayOperationFailed(String operation, PaymentId id, GatewayId gateway,

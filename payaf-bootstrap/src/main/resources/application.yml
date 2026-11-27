@@ -9,6 +9,16 @@ spring:
 server:
   port: 8080
 
+payaf:
+  # Circuit breaker de cada pasarela: se abre con 3 fallos técnicos seguidos y vuelve a
+  # probar pasados 15 s
+  breaker:
+    failure-threshold: 3
+    open-duration: 15s
+  # Reaper de pagos huérfanos (cada 30 s, PENDING de más de 2 min)
+  reaper:
+    enabled: true
+
 management:
   endpoints:
     web:

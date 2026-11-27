@@ -205,19 +205,19 @@ class PaymentTest {
     void rehydrate() {
         Payment payment = Payment.rehydrate(ID, request(1000), PaymentStatus.PARTIALLY_REFUNDED,
                 List.of(attempt(AttemptOutcome.APPROVED)), STRIPE, "ch_1", null,
-                Money.of(400, Currency.EUR), TestRefs.refundsFor(Money.of(400, Currency.EUR)), T0, T2);
+                Money.of(400, Currency.EUR), TestRefs.refundsFor(Money.of(400, Currency.EUR)), T0, T2, 0L);
 
         assertThat(payment.pullEvents()).isEmpty();
         assertThat(payment.remainingRefundable()).isEqualTo(Money.of(600, Currency.EUR));
 
         assertThatThrownBy(() -> Payment.rehydrate(ID, request(1000), PaymentStatus.REFUNDED, List.of(),
-                STRIPE, "ch_1", null, Money.of(400, Currency.EUR), TestRefs.refundsFor(Money.of(400, Currency.EUR)), T0, T2))
+                STRIPE, "ch_1", null, Money.of(400, Currency.EUR), TestRefs.refundsFor(Money.of(400, Currency.EUR)), T0, T2, 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
         assertThatThrownBy(() -> Payment.rehydrate(ID, request(1000), PaymentStatus.AUTHORIZED, List.of(),
-                null, null, null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2))
+                null, null, null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2, 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
         assertThatThrownBy(() -> Payment.rehydrate(ID, request(1000), PaymentStatus.PENDING, List.of(),
-                null, null, null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T2, T0))
+                null, null, null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T2, T0, 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
     }
 
@@ -255,10 +255,10 @@ class PaymentTest {
     @DisplayName("rehydrate rechaza referencia o motivo en blanco")
     void rehydrateRejectsBlankTexts() {
         assertThatThrownBy(() -> Payment.rehydrate(ID, request(1000), PaymentStatus.FAILED, List.of(),
-                null, null, "  ", Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2))
+                null, null, "  ", Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2, 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
         assertThatThrownBy(() -> Payment.rehydrate(ID, request(1000), PaymentStatus.AUTHORIZED, List.of(),
-                STRIPE, "", null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2))
+                STRIPE, "", null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T2, 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
     }
 }

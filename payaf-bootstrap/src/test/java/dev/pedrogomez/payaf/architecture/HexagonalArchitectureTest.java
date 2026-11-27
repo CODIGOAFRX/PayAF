@@ -11,8 +11,8 @@ import com.tngtech.archunit.lang.ArchRule;
  * <p>
  * Las reglas viven en {@link HexagonalArchitectureRules} para poder comprobar, con
  * fixtures, que de verdad detectan las violaciones ({@link HexagonalArchitectureRulesTest}).
- * Las reglas del dominio y de la aplicación exigen encontrar clases; la de los adaptadores
- * se permite vacía ({@code allowEmptyShould}) mientras esa capa no tenga código.
+ * Todas exigen encontrar clases. Bootstrap ({@code dev.pedrogomez.payaf.config}) no está en
+ * ningún slice de adaptador, así que puede importarlos todos: es quien los cablea.
  */
 @AnalyzeClasses(packages = HexagonalArchitectureTest.ROOT, importOptions = ImportOption.DoNotIncludeTests.class)
 class HexagonalArchitectureTest {

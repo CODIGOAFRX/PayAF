@@ -83,6 +83,38 @@ La conexión por defecto es `jdbc:postgresql://localhost:5433/payaf` (usuario y
 contraseña `payaf`). Se puede cambiar con las variables `PAYAF_DB_URL`,
 `PAYAF_DB_USER` y `PAYAF_DB_PASSWORD`.
 
+## Pasarelas simuladas
+
+El perfil `memory` enruta contra cuatro PSP simuladas (`payaf-adapter-out-gateway-sim`). Cada
+una imita el «idioma» de la de verdad (PaymentIntents `pi_...` de Stripe, `pspReference` de 16
+dígitos de Adyen, `Ds_Order` y `Ds_Response` de Redsys) y su adaptador lo traduce al puerto
+`PaymentGateway`: es una capa anticorrupción.
+
+| Pasarela | Divisas | Países | Comisión |
+|---|---|---|---|
+| `stripe` | EUR, USD, GBP | todos | 2,90 % + 0,25 |
+| `adyen` | EUR, USD, GBP, JPY | todos | 2,50 % + 0,30 (JPY sin fija) |
+| `redsys` | EUR | ES | 1,20 % |
+| `mock` | todas | todos | 9,00 % |
+
+**Rechazo determinista.** Todas rechazan (DECLINED) los importes cuyas unidades menores
+terminan en 51 (`amountMinor % 100 == 51`, por ejemplo 100,51 EUR), cada una con su código
+nativo: Stripe `insufficient_funds` (decline code de `card_declined`), Adyen
+`Not enough balance` (`Refused`), Redsys `0190` y mock `mock_decline_51`. Un rechazo no hace
+failover: el pago queda FAILED con `DECLINED: <código>`.
+
+**Operaciones que la PSP no admite** (capturar dos veces, anular algo capturado, reembolsar de
+más, referencia desconocida, importe que no cuadra) son DECLINED con el código nativo, no
+ERROR: la PSP funciona y dice que no, así que no cuenta para el circuit breaker.
+
+**Averías.** `GatewayChaosControl` (la API de administración del simulador, no un puerto de
+la aplicación) permite tirar una pasarela (ERROR `HTTP_503`), darle latencia (si supera el
+timeout de 2 s, TIMEOUT) o una tasa de error (ERROR `HTTP_500`).
+
+**Pagos huérfanos.** Cada 30 s un reaper recoge los pagos que llevan más de 2 minutos en
+PENDING: si alguna PSP llegó a aprobarlos los autoriza, y si no los da por abandonados
+(`FAILED` con `ABANDONED`). Se apaga con `payaf.reaper.enabled=false`.
+
 ### Comprobar que está vivo
 
 ```bash

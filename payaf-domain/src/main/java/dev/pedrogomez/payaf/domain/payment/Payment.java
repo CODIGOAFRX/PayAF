@@ -71,10 +71,11 @@ public final class Payment {
     private String failureReason;
     private Money refundedAmount;
     private Instant updatedAt;
+    private long version;
 
     private Payment(PaymentId id, PaymentRequest request, PaymentStatus status, List<GatewayAttempt> attempts,
                     GatewayId authorizedBy, String gatewayReference, String failureReason, Money refundedAmount,
-                    List<Refund> refunds, Instant createdAt, Instant updatedAt) {
+                    List<Refund> refunds, Instant createdAt, Instant updatedAt, long version) {
         this.id = id;
         this.request = request;
         this.status = status;
@@ -86,6 +87,7 @@ public final class Payment {
         this.refunds = new ArrayList<>(refunds);
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.version = version;
     }
 
     /** Crea un pago nuevo en PENDING y emite {@link PaymentCreated}. */
@@ -94,7 +96,7 @@ public final class Payment {
         Objects.requireNonNull(request, "la orden de pago no puede ser nula");
         Objects.requireNonNull(now, "el instante no puede ser nulo");
         Payment payment = new Payment(id, request, PaymentStatus.PENDING, List.of(), null, null, null,
-                Money.zero(request.amount().currency()), List.of(), now, now);
+                Money.zero(request.amount().currency()), List.of(), now, now, 0L);
         payment.events.add(new PaymentCreated(id, request.amount(), request.country(),
                 request.merchantReference(), now));
         return payment;
@@ -113,12 +115,13 @@ public final class Payment {
      * @param failureReason    motivo del fallo, o {@code null} si no ha fallado
      * @param refundedAmount   total reembolsado; tiene que ser la suma de {@code refunds}
      * @param refunds          reembolsos aplicados, sin referencias repetidas
+     * @param version          versión guardada (ver {@link #version()}); cero o mayor
      * @throws InconsistentPaymentStateException si la combinación de datos es imposible
      */
     public static Payment rehydrate(PaymentId id, PaymentRequest request, PaymentStatus status,
                                     List<GatewayAttempt> attempts, GatewayId authorizedBy,
                                     String gatewayReference, String failureReason, Money refundedAmount,
-                                    List<Refund> refunds, Instant createdAt, Instant updatedAt) {
+                                    List<Refund> refunds, Instant createdAt, Instant updatedAt, long version) {
         Objects.requireNonNull(id, "el identificador no puede ser nulo");
         Objects.requireNonNull(request, "la orden de pago no puede ser nula");
         Objects.requireNonNull(status, "el estado no puede ser nulo");
@@ -127,6 +130,9 @@ public final class Payment {
         Objects.requireNonNull(refunds, "la lista de reembolsos no puede ser nula");
         Objects.requireNonNull(createdAt, "la fecha de creación no puede ser nula");
         Objects.requireNonNull(updatedAt, "la fecha de actualización no puede ser nula");
+        if (version < 0) {
+            throw inconsistent(id, "la versión no puede ser negativa: " + version);
+        }
         if (attempts.stream().anyMatch(Objects::isNull)) {
             throw inconsistent(id, "hay intentos nulos");
         }
@@ -171,7 +177,7 @@ public final class Payment {
             throw inconsistent(id, "el motivo de fallo está en blanco");
         }
         return new Payment(id, request, status, attempts, authorizedBy, gatewayReference, failureReason,
-                refundedAmount, refunds, createdAt, updatedAt);
+                refundedAmount, refunds, createdAt, updatedAt, version);
     }
 
     /**
@@ -369,6 +375,29 @@ public final class Payment {
         }
     }
 
+    // ---------------------------------------------------------------------------------
+    // Concurrencia optimista
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Apunta que el pago se ha guardado con la versión {@code newVersion}.
+     * <p>
+     * <strong>Solo para repositorios.</strong> Lo llama el adaptador de {@code PaymentRepository}
+     * justo después de guardar, para que la siguiente escritura de esta misma instancia parta de
+     * la versión que acaba de quedar guardada. No es un método de negocio: no cambia el estado,
+     * no emite eventos ni mira el reloj.
+     *
+     * @throws InvalidValueException si {@code newVersion} no es mayor que la versión actual: una
+     *                               versión que no avanza no protegería de nada
+     */
+    public void markPersisted(long newVersion) {
+        if (newVersion <= version) {
+            throw new InvalidValueException("La nueva versión del pago " + id + " (" + newVersion
+                    + ") debe ser mayor que la actual (" + version + ")");
+        }
+        this.version = newVersion;
+    }
+
     /**
      * Entrega los eventos acumulados desde la última llamada y vacía la lista. Así cada
      * evento se publica una sola vez aunque el agregado siga vivo.
@@ -447,6 +476,19 @@ public final class Payment {
 
     public Instant updatedAt() {
         return updatedAt;
+    }
+
+    /**
+     * Token opaco de concurrencia optimista: la versión del pago con la que se cargó (o la
+     * última con la que se guardó). Vale 0 en un pago recién creado que aún no se ha guardado.
+     * <p>
+     * Es un concepto del agregado, no de JPA: el agregado es la frontera de consistencia y dos
+     * peticiones que lo modifican a la vez (dos capturas, una captura y un reembolso) no pueden
+     * pisarse. El repositorio compara esta versión con la guardada y rechaza la escritura si ya
+     * no coinciden. Solo importa si es igual o distinta: no hay que interpretar su valor.
+     */
+    public long version() {
+        return version;
     }
 
     /** Dos pagos son el mismo si tienen la misma identidad, como corresponde a una entidad. */

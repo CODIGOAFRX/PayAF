@@ -99,6 +99,13 @@ import java.util.Optional;
  * relanzar. Los {@link Error} de la JVM sí se propagan; los PENDING huérfanos que dejen los
  * recogerá un proceso de limpieza en la fase 4.
  * <p>
+ * <strong>Concurrencia optimista.</strong> Si el {@code save} de la transacción 2 (o el de
+ * {@code closeUnrecordedAuthorization}) lanza CONCURRENT_MODIFICATION es que otro proceso ha
+ * guardado el pago mientras se enrutaba; en la práctica, el reaper de pagos huérfanos
+ * ({@link ReapStalePaymentsService}) lo ha dado por abandonado o lo ha recuperado. La excepción
+ * se propaga tal cual y no se reintenta: el pago guardado (y la clave, que el reaper completa)
+ * es el que manda, y pisarlo sería perder lo que ha decidido el reaper.
+ * <p>
  * <strong>Tiempo.</strong> Cada paso toma un instante fresco del reloj, nunca anterior a la
  * última actualización del pago, para respetar el tiempo monótono del agregado.
  * <p>

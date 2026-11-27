@@ -1,6 +1,7 @@
 package dev.pedrogomez.payaf.application.service;
 
 import dev.pedrogomez.payaf.application.exception.ApplicationException;
+import dev.pedrogomez.payaf.application.exception.ConcurrentPaymentModificationException;
 import dev.pedrogomez.payaf.application.port.in.CancelPaymentUseCase;
 import dev.pedrogomez.payaf.application.port.in.CapturePaymentUseCase;
 import dev.pedrogomez.payaf.application.port.in.PaymentView;
@@ -16,6 +17,8 @@ import dev.pedrogomez.payaf.domain.event.DomainEvent;
 import dev.pedrogomez.payaf.domain.payment.AttemptOutcome;
 import dev.pedrogomez.payaf.domain.payment.Payment;
 import dev.pedrogomez.payaf.domain.payment.PaymentId;
+import dev.pedrogomez.payaf.domain.payment.PaymentStatus;
+import dev.pedrogomez.payaf.domain.payment.RefundOutcome;
 import dev.pedrogomez.payaf.domain.routing.CircuitBreaker;
 import dev.pedrogomez.payaf.domain.shared.GatewayId;
 import dev.pedrogomez.payaf.domain.shared.Money;
@@ -28,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * Casos de uso de captura, reembolso y anulación. Los tres siguen el mismo guion, así que
@@ -48,6 +52,21 @@ import java.util.function.BiFunction;
  * </ol>
  * El breaker se consulta solo para registrar, no para cortar la llamada: aquí no hay otra
  * pasarela a la que ir, y la operación la ha pedido el comercio de forma explícita.
+ * <p>
+ * <strong>Concurrencia.</strong> El pago se carga en una transacción y se guarda en otra, con
+ * la llamada a la PSP en medio. Si otra petición lo guarda entretanto (dos capturas a la vez,
+ * una captura y una anulación), el {@code save} final lanza
+ * {@link dev.pedrogomez.payaf.application.exception.ConcurrentPaymentModificationException}
+ * (CONCURRENT_MODIFICATION) gracias a la versión optimista del pago. No se puede suponer que la
+ * PSP rechace la segunda llamada: dos reembolsos parciales compatibles (30 + 30 de 100) los
+ * aprueba los dos. Por eso <strong>un APPROVED de la PSP nunca se pierde por un
+ * CONCURRENT_MODIFICATION</strong>: se recarga el pago y se vuelve a aplicar la operación con los
+ * datos de la PSP, hasta {@value #MAX_RECORD_ATTEMPTS} veces. Un reembolso es seguro de
+ * reaplicar porque el dominio es idempotente por la referencia del reembolso; una captura o una
+ * anulación que la otra petición ya ha dejado hecha se da por buena y se devuelve el pago tal
+ * como está; si el dominio la rechaza por otra razón, sale su {@code DomainException}. Si se
+ * agotan los intentos, OPERATION_UNRECORDED con la referencia de la PSP para conciliarla. Un
+ * CONCURRENT_MODIFICATION antes de llamar a la PSP no puede darse: solo se guarda después.
  */
 public final class PaymentOperationsService implements CapturePaymentUseCase, RefundPaymentUseCase,
         CancelPaymentUseCase {
@@ -76,15 +95,25 @@ public final class PaymentOperationsService implements CapturePaymentUseCase, Re
     /** Prefijo de la referencia inventada con la que se ensaya un reembolso antes de llamar a la PSP. */
     private static final String DRY_RUN_REFUND_PREFIX = "dry-run-";
 
-    /** Lo que se aplica al pago cuando la PSP ha aprobado; recibe su respuesta. */
+    /** Intentos de apuntar en el pago una operación aprobada por la PSP (ver {@code recordApproved}). */
+    static final int MAX_RECORD_ATTEMPTS = 5;
+
+    /**
+     * Lo que se aplica al pago cuando la PSP ha aprobado; recibe su respuesta. Devuelve si el pago
+     * ha cambiado (un reembolso ya apuntado no lo cambia).
+     */
     private interface ApprovedOperation {
-        void apply(Payment payment, GatewayResponse response, Instant now);
+        boolean apply(Payment payment, GatewayResponse response, Instant now);
     }
 
     @Override
     public PaymentView capture(PaymentId paymentId) {
         return execute(paymentId, "capture", Payment::capture,
-                (payment, response, now) -> payment.capture(now),
+                (payment, response, now) -> {
+                    payment.capture(now);
+                    return true;
+                },
+                payment -> payment.status().isCaptured(),
                 (gateway, payment) -> gateway.capture(reference(payment), payment.amount()));
     }
 
@@ -99,19 +128,26 @@ public final class PaymentOperationsService implements CapturePaymentUseCase, Re
         Objects.requireNonNull(amount, "el importe no puede ser nulo");
         return execute(paymentId, "refund",
                 (payment, now) -> payment.refund(amount, DRY_RUN_REFUND_PREFIX + UUID.randomUUID(), now),
-                (payment, response, now) -> payment.refund(amount, response.gatewayReference().orElseThrow(), now),
+                (payment, response, now) -> payment.refund(amount, response.gatewayReference().orElseThrow(), now)
+                        == RefundOutcome.APPLIED,
+                // Sin «ya aplicado» propio: el dominio es idempotente por la referencia del reembolso.
+                payment -> false,
                 (gateway, payment) -> gateway.refund(reference(payment), amount));
     }
 
     @Override
     public PaymentView cancel(PaymentId paymentId) {
         return execute(paymentId, "cancel", Payment::cancel,
-                (payment, response, now) -> payment.cancel(now),
+                (payment, response, now) -> {
+                    payment.cancel(now);
+                    return true;
+                },
+                payment -> payment.status() == PaymentStatus.CANCELED,
                 (gateway, payment) -> gateway.cancel(reference(payment)));
     }
 
     private PaymentView execute(PaymentId paymentId, String operation, BiConsumer<Payment, Instant> dryRun,
-                                ApprovedOperation domainOperation,
+                                ApprovedOperation domainOperation, Predicate<Payment> alreadyApplied,
                                 BiFunction<PaymentGateway, Payment, GatewayResponse> gatewayCall) {
         Objects.requireNonNull(paymentId, "el identificador no puede ser nulo");
         Payment payment = transactions.inTransaction(() -> payments.findById(paymentId))
@@ -145,14 +181,54 @@ public final class PaymentOperationsService implements CapturePaymentUseCase, Re
                     response.code());
         }
 
-        return transactions.inTransaction(() -> {
-            domainOperation.apply(payment, response, ServiceSupport.nextInstant(clock, payment));
-            payments.save(payment);
-            List<DomainEvent> events = new ArrayList<>(payment.pullEvents());
-            events.addAll(ServiceSupport.pullEvents(List.of(breaker)));
-            eventPublisher.publish(events);
-            return PaymentView.from(payment);
-        });
+        return recordApproved(operation, payment, gatewayId, response, breaker, domainOperation, alreadyApplied);
+    }
+
+    /**
+     * Apunta en el pago una operación que la PSP ya ha aprobado. <strong>Un APPROVED nunca se
+     * pierde por un CONCURRENT_MODIFICATION:</strong> si el {@code save} choca con otra petición
+     * que ha guardado el pago entretanto, se recarga el pago, se vuelve a aplicar la operación con
+     * los datos de la PSP y se guarda otra vez, hasta {@value #MAX_RECORD_ATTEMPTS} intentos.
+     * <ul>
+     *   <li>Si el pago recargado ya está en el estado destino ({@code alreadyApplied}: capturado o
+     *       anulado por la petición concurrente), se devuelve la vista actual sin error.</li>
+     *   <li>Si la operación no cambia nada (un reembolso cuya referencia de la PSP ya está
+     *       apuntada), tampoco se guarda.</li>
+     *   <li>Si el dominio la rechaza por otra razón (capturar un pago que otra petición ha
+     *       anulado), su {@code DomainException} sale tal cual.</li>
+     *   <li>Si se agotan los intentos, OPERATION_UNRECORDED con la referencia de la PSP en el
+     *       mensaje, para conciliarla después: la operación está hecha en la PSP.</li>
+     * </ul>
+     * Los eventos del breaker se sacan después del {@code save}, así que un intento que choca no
+     * los pierde.
+     */
+    private PaymentView recordApproved(String operation, Payment loaded, GatewayId gatewayId, GatewayResponse response,
+                                       CircuitBreaker breaker, ApprovedOperation domainOperation,
+                                       Predicate<Payment> alreadyApplied) {
+        PaymentId paymentId = loaded.id();
+        for (int attempt = 1; attempt <= MAX_RECORD_ATTEMPTS; attempt++) {
+            boolean reload = attempt > 1;
+            try {
+                return transactions.inTransaction(() -> {
+                    Payment payment = reload
+                            ? payments.findById(paymentId).orElseThrow(() -> ApplicationException.paymentNotFound(paymentId))
+                            : loaded;
+                    boolean changed = !alreadyApplied.test(payment)
+                            && domainOperation.apply(payment, response, ServiceSupport.nextInstant(clock, payment));
+                    if (changed) {
+                        payments.save(payment);
+                    }
+                    List<DomainEvent> events = new ArrayList<>(payment.pullEvents());
+                    events.addAll(ServiceSupport.pullEvents(List.of(breaker)));
+                    eventPublisher.publish(events);
+                    return PaymentView.from(payment);
+                });
+            } catch (ConcurrentPaymentModificationException e) {
+                // Otra petición ha guardado el pago: se recarga y se vuelve a aplicar.
+            }
+        }
+        throw ApplicationException.operationUnrecorded(operation, paymentId, gatewayId,
+                response.gatewayReference().orElse("?"), MAX_RECORD_ATTEMPTS);
     }
 
     private static String reference(Payment payment) {
@@ -167,6 +243,6 @@ public final class PaymentOperationsService implements CapturePaymentUseCase, Re
         return Payment.rehydrate(payment.id(), payment.request(), payment.status(), payment.attempts(),
                 payment.authorizedBy().orElse(null), payment.gatewayReference().orElse(null),
                 payment.failureReason().orElse(null), payment.refundedAmount(), payment.refunds(),
-                payment.createdAt(), payment.updatedAt());
+                payment.createdAt(), payment.updatedAt(), payment.version());
     }
 }

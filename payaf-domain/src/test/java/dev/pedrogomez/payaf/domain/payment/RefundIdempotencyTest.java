@@ -86,17 +86,17 @@ class RefundIdempotencyTest {
     void rehydrateValidatesRefunds() {
         List<Refund> duplicated = List.of(new Refund("re_1", eur(100), T0), new Refund("re_1", eur(200), T0));
         assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, PaymentStatus.PARTIALLY_REFUNDED, List.of(),
-                GatewayId.of("stripe"), "ch_1", null, eur(300), duplicated, T0, T0.plusSeconds(1)))
+                GatewayId.of("stripe"), "ch_1", null, eur(300), duplicated, T0, T0.plusSeconds(1), 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
 
         List<Refund> short_ = List.of(new Refund("re_1", eur(100), T0));
         assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, PaymentStatus.PARTIALLY_REFUNDED, List.of(),
-                GatewayId.of("stripe"), "ch_1", null, eur(300), short_, T0, T0.plusSeconds(1)))
+                GatewayId.of("stripe"), "ch_1", null, eur(300), short_, T0, T0.plusSeconds(1), 0L))
                 .isInstanceOf(InconsistentPaymentStateException.class);
 
         List<Refund> ok = List.of(new Refund("re_1", eur(100), T0), new Refund("re_2", eur(200), T0));
         Payment p = Payment.rehydrate(ID, REQUEST, PaymentStatus.PARTIALLY_REFUNDED, List.of(),
-                GatewayId.of("stripe"), "ch_1", null, eur(300), ok, T0, T0.plusSeconds(1));
+                GatewayId.of("stripe"), "ch_1", null, eur(300), ok, T0, T0.plusSeconds(1), 0L);
         assertThat(p.refund(eur(200), "re_2", T0.plusSeconds(2))).isEqualTo(RefundOutcome.ALREADY_APPLIED);
     }
 }

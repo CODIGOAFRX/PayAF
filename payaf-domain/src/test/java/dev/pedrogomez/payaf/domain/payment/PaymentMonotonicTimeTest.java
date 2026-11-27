@@ -141,7 +141,7 @@ class PaymentMonotonicTimeTest {
     @DisplayName("un pago rehidratado usa su updatedAt guardado como referencia")
     void rehydratedPaymentUsesStoredUpdatedAt() {
         Payment p = Payment.rehydrate(PaymentId.of(UUID.randomUUID()), REQUEST, PaymentStatus.AUTHORIZED, List.of(),
-                GW, "ref", null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, LAST);
+                GW, "ref", null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, LAST, 0L);
         assertThatThrownBy(() -> p.capture(LAST.minusMillis(1))).isInstanceOf(NonMonotonicTimeException.class);
         p.capture(LAST);
         assertThat(p.status()).isEqualTo(PaymentStatus.CAPTURED);

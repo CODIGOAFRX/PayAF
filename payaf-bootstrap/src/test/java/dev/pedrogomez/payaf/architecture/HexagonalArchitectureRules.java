@@ -14,13 +14,14 @@ import com.tngtech.archunit.lang.ArchRule;
  * sobre clases fixture con la misma estructura de paquetes para demostrar que cada
  * regla falla cuando se viola. Así las dos suites evalúan exactamente la misma regla.
  * <p>
- * Las reglas del dominio y de la aplicación ya no admiten estar vacías: el dominio tiene
- * clases desde la fase 2 y la aplicación desde la fase 3. Si un día una regla no encontrara
- * ninguna (por un paquete mal escrito, por ejemplo), debe fallar en lugar de pasar sin
- * comprobar nada. Las fixtures siempre incluyen una clase de dominio ({@code CleanMoney}) y
- * dos de aplicación ({@code CleanPaymentRepository}, {@code CleanAuthorizeService}), así que
- * no les afecta. La regla de los adaptadores sigue con {@code allowEmptyShould(true)} hasta
- * que esa capa tenga clases.
+ * Ninguna regla admite estar vacía: el dominio tiene clases desde la fase 2, la aplicación
+ * desde la fase 3 y los adaptadores (simulador de PSP y persistencia en memoria) desde la 4a.
+ * Si un día una regla no encontrara ninguna (por un paquete mal escrito, por ejemplo), debe
+ * fallar en lugar de pasar sin comprobar nada. Las fixtures siempre incluyen una clase de
+ * dominio ({@code CleanMoney}), dos de aplicación ({@code CleanPaymentRepository},
+ * {@code CleanAuthorizeService}) y tres adaptadores ({@code CleanPaymentController},
+ * {@code CleanJpaPaymentRepository}, {@code CleanInMemoryPaymentRepository}), así que no les
+ * afecta.
  */
 final class HexagonalArchitectureRules {
 
@@ -55,8 +56,7 @@ final class HexagonalArchitectureRules {
                 .matching(root + ".adapter.(*).(*)..")
                 .namingSlices("adaptador $1.$2")
                 .should().notDependOnEachOther()
-                .because("un adaptador nunca importa otro adaptador")
-                .allowEmptyShould(true);
+                .because("un adaptador nunca importa otro adaptador");
     }
 
     private static String domain(String root) {

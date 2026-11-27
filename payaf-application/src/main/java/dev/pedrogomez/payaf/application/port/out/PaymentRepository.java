@@ -3,6 +3,7 @@ package dev.pedrogomez.payaf.application.port.out;
 import dev.pedrogomez.payaf.domain.payment.Payment;
 import dev.pedrogomez.payaf.domain.payment.PaymentId;
 import dev.pedrogomez.payaf.domain.shared.GatewayId;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,12 +23,21 @@ public interface PaymentRepository {
     /**
      * Inserta o actualiza el pago con todos sus intentos y reembolsos. No publica sus eventos.
      * <p>
-     * <strong>Control optimista de versión.</strong> El adaptador debe comprobar que el pago
-     * que se guarda parte de la última versión guardada (por ejemplo, con una columna
-     * {@code version} y un {@code UPDATE ... WHERE version = ?}). Si otra petición lo ha
-     * guardado entretanto, no lo sobrescribe y lanza
-     * {@link dev.pedrogomez.payaf.application.exception.ConcurrentPaymentModificationException}
-     * (código {@code CONCURRENT_MODIFICATION}), que deshace la transacción.
+     * <strong>Control optimista de versión.</strong> {@link Payment#version()} es la versión
+     * con la que se cargó el pago (0 si es nuevo y nunca se ha guardado). El adaptador debe:
+     * <ol>
+     *   <li>Comparar esa versión con la guardada (0 si el pago no está guardado), por ejemplo con
+     *       una columna {@code version} y un {@code UPDATE ... WHERE version = ?}.</li>
+     *   <li>Si no coinciden (otra petición lo ha guardado entretanto, o se intenta insertar dos
+     *       veces el mismo pago nuevo), no escribir nada y lanzar
+     *       {@link dev.pedrogomez.payaf.application.exception.ConcurrentPaymentModificationException}
+     *       (código {@code CONCURRENT_MODIFICATION}), que deshace la transacción.</li>
+     *   <li>Si coinciden, guardar con la versión incrementada y llamar a
+     *       {@link Payment#markPersisted(long)} con ella, para que un segundo {@code save} de la
+     *       misma instancia parta de lo que acaba de quedar guardado.</li>
+     * </ol>
+     * Si la transacción se deshace después del {@code save}, la instancia queda con una versión
+     * que no está guardada: hay que descartarla y volver a cargar el pago.
      */
     void save(Payment payment);
 
@@ -41,4 +51,19 @@ public interface PaymentRepository {
 
     /** Los últimos pagos, del más reciente al más antiguo, como mucho {@code limit}. */
     List<Payment> findRecent(int limit);
+
+    /**
+     * Pagos que siguen en PENDING y no han cambiado desde antes de {@code cutoff}
+     * ({@link Payment#updatedAt()} estrictamente anterior), del más antiguo al más reciente y
+     * como mucho {@code limit}. Es lo que necesita el reaper de pagos huérfanos.
+     * <p>
+     * Ojo: mientras un pago prueba pasarelas, sus intentos NO se guardan uno a uno; el pago solo
+     * se guarda al crearse (transacción 1) y al cerrarse (transacción 2) en
+     * {@code AuthorizePaymentService}. Su {@code updatedAt} guardado es, por tanto, el de la
+     * creación durante todo el enrutado. El reaper no distingue un pago en vuelo de uno huérfano
+     * por este campo: confía en que su umbral sea mucho mayor que lo que puede durar un enrutado
+     * (del orden de nº de pasarelas × timeout), y si aun así coinciden, la versión optimista
+     * decide quién gana (ver {@code ReaperScheduler} en bootstrap).
+     */
+    List<Payment> findPendingOlderThan(Instant cutoff, int limit);
 }
