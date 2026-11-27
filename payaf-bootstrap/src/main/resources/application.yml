@@ -70,6 +70,9 @@ spring:
     url: ${PAYAF_DB_URL:jdbc:postgresql://localhost:5433/payaf}
     username: ${PAYAF_DB_USER:payaf}
     password: ${PAYAF_DB_PASSWORD:payaf}
+    hikari:
+      # Neon free tiene pocas conexiones: un pool pequeño basta para la demo
+      maximum-pool-size: ${PAYAF_DB_POOL:5}
   jpa:
     open-in-view: false
     hibernate:

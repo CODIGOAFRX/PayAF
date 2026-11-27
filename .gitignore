@@ -6,3 +6,10 @@ target/
 
 # Base de datos de jqwik
 .jqwik-database
+
+# Variables de Neon con secretos
+.env.local
+.env.*.local
+.neon
+node_modules/
+node_modules/
