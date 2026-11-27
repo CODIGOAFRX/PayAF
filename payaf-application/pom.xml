@@ -30,5 +30,11 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Tests de propiedades del failover: el motor de jqwik corre sobre la JUnit Platform junto a Jupiter -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

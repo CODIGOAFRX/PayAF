@@ -224,7 +224,7 @@ class PaymentTransitionMatrixTest {
         REFUND_PART(PaymentRefunded.class) {
             @Override
             void apply(Payment p, PaymentStatus target) {
-                p.refund(Money.of(1, Currency.EUR), T_OP);
+                p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T_OP);
             }
         },
         REFUND_ALL(PaymentRefunded.class) {
@@ -233,7 +233,7 @@ class PaymentTransitionMatrixTest {
                 // Todo lo que queda; si no se ha capturado nada, el importe entero. En REFUNDED
                 // no queda nada y cualquier reembolso positivo es ya un reembolso de más.
                 Money rest = p.amount().minus(p.refundedAmount());
-                p.refund(rest.isPositive() ? rest : Money.of(1, Currency.EUR), T_OP);
+                p.refund(rest.isPositive() ? rest : Money.of(1, Currency.EUR), TestRefs.next(), T_OP);
             }
         };
 
@@ -285,12 +285,12 @@ class PaymentTransitionMatrixTest {
             case PARTIALLY_REFUNDED -> {
                 p.authorize(GW, "ref-1", t);
                 p.capture(t);
-                p.refund(Money.of(300, Currency.EUR), t);
+                p.refund(Money.of(300, Currency.EUR), TestRefs.next(), t);
             }
             case REFUNDED -> {
                 p.authorize(GW, "ref-1", t);
                 p.capture(t);
-                p.refund(Money.of(AMOUNT, Currency.EUR), t);
+                p.refund(Money.of(AMOUNT, Currency.EUR), TestRefs.next(), t);
             }
         }
         return p;
@@ -305,7 +305,7 @@ class PaymentTransitionMatrixTest {
         };
         return Payment.rehydrate(id(), request(), status, List.of(),
                 authorized ? GW : null, authorized ? "ref-1" : null, status == FAILED ? "todas caídas" : null,
-                Money.of(refunded, Currency.EUR), T0, T0.plusSeconds(1));
+                Money.of(refunded, Currency.EUR), TestRefs.refundsFor(Money.of(refunded, Currency.EUR)), T0, T0.plusSeconds(1));
     }
 
     /** Todo lo observable del pago, para comprobar que una operación rechazada no lo toca. */

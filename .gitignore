@@ -3,3 +3,6 @@ target/
 *.iml
 .env
 .vscode/
+
+# Base de datos de jqwik
+.jqwik-database

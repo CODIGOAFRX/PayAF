@@ -15,9 +15,11 @@ import dev.pedrogomez.payaf.domain.shared.Money;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Agregado raíz del pago.
@@ -36,6 +38,8 @@ import java.util.Optional;
  *   <li>Un pago autorizado (y todo lo que viene después) recuerda qué pasarela lo autorizó.</li>
  *   <li>Se captura siempre el total: no hay capturas parciales.</li>
  *   <li>Lo reembolsado nunca supera lo capturado, y si lo iguala el pago pasa a REFUNDED.</li>
+ *   <li>Lo reembolsado es siempre la suma de sus {@link Refund}, y no hay dos con la misma
+ *       referencia de pasarela: un mismo reembolso no se cuenta dos veces.</li>
  * </ul>
  * Cada cambio deja un evento de dominio en una lista interna. El agregado no publica
  * nada: la aplicación los recoge con {@link #pullEvents()} después de guardar. Tampoco lee
@@ -57,6 +61,7 @@ public final class Payment {
     private final PaymentId id;
     private final PaymentRequest request;
     private final List<GatewayAttempt> attempts;
+    private final List<Refund> refunds;
     private final Instant createdAt;
     private final List<DomainEvent> events = new ArrayList<>();
 
@@ -69,7 +74,7 @@ public final class Payment {
 
     private Payment(PaymentId id, PaymentRequest request, PaymentStatus status, List<GatewayAttempt> attempts,
                     GatewayId authorizedBy, String gatewayReference, String failureReason, Money refundedAmount,
-                    Instant createdAt, Instant updatedAt) {
+                    List<Refund> refunds, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.request = request;
         this.status = status;
@@ -78,6 +83,7 @@ public final class Payment {
         this.gatewayReference = gatewayReference;
         this.failureReason = failureReason;
         this.refundedAmount = refundedAmount;
+        this.refunds = new ArrayList<>(refunds);
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -88,7 +94,7 @@ public final class Payment {
         Objects.requireNonNull(request, "la orden de pago no puede ser nula");
         Objects.requireNonNull(now, "el instante no puede ser nulo");
         Payment payment = new Payment(id, request, PaymentStatus.PENDING, List.of(), null, null, null,
-                Money.zero(request.amount().currency()), now, now);
+                Money.zero(request.amount().currency()), List.of(), now, now);
         payment.events.add(new PaymentCreated(id, request.amount(), request.country(),
                 request.merchantReference(), now));
         return payment;
@@ -105,17 +111,20 @@ public final class Payment {
      * @param authorizedBy     pasarela que lo autorizó, o {@code null} si no se ha autorizado
      * @param gatewayReference referencia en la pasarela, o {@code null}
      * @param failureReason    motivo del fallo, o {@code null} si no ha fallado
+     * @param refundedAmount   total reembolsado; tiene que ser la suma de {@code refunds}
+     * @param refunds          reembolsos aplicados, sin referencias repetidas
      * @throws InconsistentPaymentStateException si la combinación de datos es imposible
      */
     public static Payment rehydrate(PaymentId id, PaymentRequest request, PaymentStatus status,
                                     List<GatewayAttempt> attempts, GatewayId authorizedBy,
                                     String gatewayReference, String failureReason, Money refundedAmount,
-                                    Instant createdAt, Instant updatedAt) {
+                                    List<Refund> refunds, Instant createdAt, Instant updatedAt) {
         Objects.requireNonNull(id, "el identificador no puede ser nulo");
         Objects.requireNonNull(request, "la orden de pago no puede ser nula");
         Objects.requireNonNull(status, "el estado no puede ser nulo");
         Objects.requireNonNull(attempts, "la lista de intentos no puede ser nula");
         Objects.requireNonNull(refundedAmount, "el importe reembolsado no puede ser nulo");
+        Objects.requireNonNull(refunds, "la lista de reembolsos no puede ser nula");
         Objects.requireNonNull(createdAt, "la fecha de creación no puede ser nula");
         Objects.requireNonNull(updatedAt, "la fecha de actualización no puede ser nula");
         if (attempts.stream().anyMatch(Objects::isNull)) {
@@ -141,6 +150,7 @@ public final class Payment {
         if (!refundCoherent) {
             throw inconsistent(id, "el importe reembolsado " + refundedAmount + " no casa con el estado " + status);
         }
+        requireRefundsMatch(id, refunds, refundedAmount);
 
         boolean mustBeAuthorized = status != PaymentStatus.PENDING && status != PaymentStatus.FAILED;
         if (mustBeAuthorized != (authorizedBy != null)) {
@@ -161,7 +171,37 @@ public final class Payment {
             throw inconsistent(id, "el motivo de fallo está en blanco");
         }
         return new Payment(id, request, status, attempts, authorizedBy, gatewayReference, failureReason,
-                refundedAmount, createdAt, updatedAt);
+                refundedAmount, refunds, createdAt, updatedAt);
+    }
+
+    /**
+     * Los reembolsos guardados explican el total: ninguno nulo, todos en la divisa del pago,
+     * sin referencias repetidas y sumando exactamente {@code refundedAmount}.
+     */
+    private static void requireRefundsMatch(PaymentId id, List<Refund> refunds, Money refundedAmount) {
+        Set<String> references = new HashSet<>();
+        long sum = 0;
+        for (Refund refund : refunds) {
+            if (refund == null) {
+                throw inconsistent(id, "hay reembolsos nulos");
+            }
+            if (refund.amount().currency() != refundedAmount.currency()) {
+                throw inconsistent(id, "el reembolso " + refund.gatewayRefundReference() + " está en otra divisa");
+            }
+            if (!references.add(refund.gatewayRefundReference())) {
+                throw inconsistent(id, "la referencia de reembolso " + refund.gatewayRefundReference()
+                        + " está repetida");
+            }
+            try {
+                sum = Math.addExact(sum, refund.amount().amountMinor());
+            } catch (ArithmeticException e) {
+                throw inconsistent(id, "la suma de los reembolsos desborda");
+            }
+        }
+        if (sum != refundedAmount.amountMinor()) {
+            throw inconsistent(id, "los reembolsos suman " + Money.of(sum, refundedAmount.currency())
+                    + " y lo reembolsado es " + refundedAmount);
+        }
     }
 
     private static InconsistentPaymentStateException inconsistent(PaymentId id, String detail) {
@@ -245,21 +285,47 @@ public final class Payment {
      * a PARTIALLY_REFUNDED si aún queda algo por devolver, o a REFUNDED si con este
      * reembolso se devuelve todo.
      * <p>
-     * Orden de las comprobaciones: primero el propio importe (divisa y signo), después que el
-     * estado admita reembolsos, que no se devuelva más de lo que queda por reembolsar y, por
-     * último, que el instante no sea anterior a la última actualización. El exceso se compara
-     * con {@link #remainingRefundable()} antes de sumar nada, así un importe enorme da
-     * {@link RefundExceedsCapturedException} y no un desbordamiento.
+     * <strong>Idempotente por referencia.</strong> Si el pago ya tiene un reembolso con
+     * {@code gatewayRefundReference}, es el mismo reembolso que llega otra vez (lo pedimos por
+     * la API y ahora la PSP lo confirma por webhook, por ejemplo): no cambia nada, no emite
+     * eventos y devuelve {@link RefundOutcome#ALREADY_APPLIED}. Esta comprobación va la
+     * primera, antes que el estado y el reloj, porque repetir el último reembolso de un pago
+     * ya REFUNDED, o repetirlo más tarde con un instante viejo, no es un error. Si la
+     * referencia se repite con <em>otro</em> importe no es una repetición sino datos
+     * contradictorios, y se rechaza.
+     * <p>
+     * Si la referencia es nueva, el orden de las comprobaciones es: primero el propio importe
+     * (divisa y signo), después que el estado admita reembolsos, que no se devuelva más de lo
+     * que queda por reembolsar y, por último, que el instante no sea anterior a la última
+     * actualización. El exceso se compara con {@link #remainingRefundable()} antes de sumar
+     * nada, así un importe enorme da {@link RefundExceedsCapturedException} y no un
+     * desbordamiento.
      *
+     * @param gatewayRefundReference referencia del reembolso en la PSP; no puede estar en blanco
+     * @throws InvalidValueException             si la referencia está en blanco, si ya existe con
+     *                                           otro importe o si el importe no es positivo
      * @throws CurrencyMismatchException         si el importe no está en la divisa del pago
-     * @throws InvalidValueException             si el importe no es positivo
      * @throws IllegalPaymentTransitionException si el pago no está capturado
      * @throws RefundExceedsCapturedException    si el total reembolsado superaría lo capturado
      * @throws NonMonotonicTimeException         si {@code now} es anterior a la última actualización
      */
-    public void refund(Money amount, Instant now) {
+    public RefundOutcome refund(Money amount, String gatewayRefundReference, Instant now) {
         Objects.requireNonNull(amount, "el importe no puede ser nulo");
+        Objects.requireNonNull(gatewayRefundReference, "la referencia del reembolso no puede ser nula");
         Objects.requireNonNull(now, "el instante no puede ser nulo");
+        if (!hasText(gatewayRefundReference)) {
+            throw new InvalidValueException("La referencia del reembolso no puede estar en blanco");
+        }
+        Optional<Refund> existing = refunds.stream()
+                .filter(r -> r.gatewayRefundReference().equals(gatewayRefundReference))
+                .findFirst();
+        if (existing.isPresent()) {
+            if (!existing.get().amount().equals(amount)) {
+                throw new InvalidValueException("El reembolso " + gatewayRefundReference + " ya se aplicó por "
+                        + existing.get().amount() + " y ahora llega por " + amount);
+            }
+            return RefundOutcome.ALREADY_APPLIED;
+        }
         if (amount.currency() != request.amount().currency()) {
             throw new CurrencyMismatchException(request.amount().currency(), amount.currency());
         }
@@ -279,7 +345,9 @@ public final class Payment {
         Money newTotal = refundedAmount.plus(amount);
         transitionTo(target, now);
         this.refundedAmount = newTotal;
-        events.add(new PaymentRefunded(id, amount, newTotal, now));
+        this.refunds.add(new Refund(gatewayRefundReference, amount, now));
+        events.add(new PaymentRefunded(id, amount, newTotal, gatewayRefundReference, now));
+        return RefundOutcome.APPLIED;
     }
 
     private void requireTransition(PaymentStatus target) {
@@ -353,8 +421,19 @@ public final class Payment {
         return status.isCaptured() ? request.amount() : Money.zero(request.amount().currency());
     }
 
+    /** Total reembolsado: siempre la suma de {@link #refunds()}. */
     public Money refundedAmount() {
         return refundedAmount;
+    }
+
+    /** Reembolsos aplicados, en orden. La lista no se puede modificar. */
+    public List<Refund> refunds() {
+        return Collections.unmodifiableList(refunds);
+    }
+
+    /** Si ya hay un reembolso con esa referencia de pasarela. */
+    public boolean hasRefund(String gatewayRefundReference) {
+        return refunds.stream().anyMatch(r -> r.gatewayRefundReference().equals(gatewayRefundReference));
     }
 
     /** Lo que aún se puede reembolsar: lo capturado menos lo ya reembolsado. Cero si no se ha capturado. */

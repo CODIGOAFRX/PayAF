@@ -59,8 +59,8 @@ class PaymentAggregateEdgeTest {
         p.recordAttempt(second);
         p.authorize(STRIPE, "ch_9", T0.plusSeconds(3));
         p.capture(T0.plusSeconds(4));
-        p.refund(Money.of(250, Currency.EUR), T0.plusSeconds(5));
-        p.refund(Money.of(750, Currency.EUR), T0.plusSeconds(6));
+        p.refund(Money.of(250, Currency.EUR), TestRefs.next(), T0.plusSeconds(5));
+        p.refund(Money.of(750, Currency.EUR), TestRefs.next(), T0.plusSeconds(6));
 
         List<DomainEvent> events = p.pullEvents();
         assertThat(events).hasExactlyElementsOfTypes(PaymentCreated.class, GatewayAttemptRecorded.class,
@@ -150,7 +150,7 @@ class PaymentAggregateEdgeTest {
         List<GatewayAttempt> source = new ArrayList<>();
         source.add(attempt(ADYEN, AttemptOutcome.ERROR, T0));
         Payment p = Payment.rehydrate(ID, REQUEST, PaymentStatus.PENDING, source, null, null, null,
-                Money.zero(Currency.EUR), T0, T0);
+                Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T0);
         source.add(attempt(STRIPE, AttemptOutcome.APPROVED, T0));
         source.clear();
         assertThat(p.attempts()).hasSize(1);
@@ -207,7 +207,7 @@ class PaymentAggregateEdgeTest {
     void rehydrateRejectsIncoherent(String description, PaymentStatus status, GatewayId authorizedBy,
                                     String reference, String failure, Money refunded) {
         assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, status, List.of(), authorizedBy, reference, failure,
-                refunded, T0, T0.plusSeconds(1)))
+                refunded, TestRefs.refundsFor(refunded), T0, T0.plusSeconds(1)))
                 .isInstanceOfSatisfying(InconsistentPaymentStateException.class,
                         e -> assertThat(e.code()).isEqualTo("INCONSISTENT_STATE"));
     }
@@ -217,11 +217,11 @@ class PaymentAggregateEdgeTest {
     void rehydrateRejectsNullAttemptsAndInvertedDates() {
         List<GatewayAttempt> withNull = Arrays.asList(attempt(STRIPE, AttemptOutcome.ERROR, T0), null);
         assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, PaymentStatus.PENDING, withNull, null, null, null,
-                Money.zero(Currency.EUR), T0, T0)).isInstanceOf(InconsistentPaymentStateException.class);
+                Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T0)).isInstanceOf(InconsistentPaymentStateException.class);
         assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, PaymentStatus.PENDING, List.of(), null, null, null,
-                Money.zero(Currency.EUR), T0, T0.minusNanos(1))).isInstanceOf(InconsistentPaymentStateException.class);
+                Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T0.minusNanos(1))).isInstanceOf(InconsistentPaymentStateException.class);
         assertThatCode(() -> Payment.rehydrate(ID, REQUEST, PaymentStatus.PENDING, List.of(), null, null, null,
-                Money.zero(Currency.EUR), T0, T0)).doesNotThrowAnyException();
+                Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T0)).doesNotThrowAnyException();
     }
 
     @Test
@@ -229,19 +229,19 @@ class PaymentAggregateEdgeTest {
     void rehydrateNulls() {
         Money zero = Money.zero(Currency.EUR);
         PaymentStatus pending = PaymentStatus.PENDING;
-        assertThatThrownBy(() -> Payment.rehydrate(null, REQUEST, pending, List.of(), null, null, null, zero, T0, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(null, REQUEST, pending, List.of(), null, null, null, zero, TestRefs.refundsFor(zero), T0, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, null, pending, List.of(), null, null, null, zero, T0, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, null, pending, List.of(), null, null, null, zero, TestRefs.refundsFor(zero), T0, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, null, List.of(), null, null, null, zero, T0, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, null, List.of(), null, null, null, zero, TestRefs.refundsFor(zero), T0, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, null, null, null, null, zero, T0, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, null, null, null, null, zero, TestRefs.refundsFor(zero), T0, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, null, T0, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, null, TestRefs.refundsFor(null), T0, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, zero, null, T0))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, zero, TestRefs.refundsFor(zero), null, T0))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, zero, T0, null))
+        assertThatThrownBy(() -> Payment.rehydrate(ID, REQUEST, pending, List.of(), null, null, null, zero, TestRefs.refundsFor(zero), T0, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
@@ -249,10 +249,10 @@ class PaymentAggregateEdgeTest {
     @DisplayName("un pago rehidratado sigue su ciclo de vida y emite solo los eventos nuevos")
     void rehydratedPaymentContinues() {
         Payment p = Payment.rehydrate(ID, REQUEST, PaymentStatus.PARTIALLY_REFUNDED, List.of(), STRIPE, "ch_1",
-                null, Money.of(999, Currency.EUR), T0, T0.plusSeconds(1));
-        assertThatThrownBy(() -> p.refund(Money.of(2, Currency.EUR), T0.plusSeconds(2)))
+                null, Money.of(999, Currency.EUR), TestRefs.refundsFor(Money.of(999, Currency.EUR)), T0, T0.plusSeconds(1));
+        assertThatThrownBy(() -> p.refund(Money.of(2, Currency.EUR), TestRefs.next(), T0.plusSeconds(2)))
                 .isInstanceOf(RefundExceedsCapturedException.class);
-        p.refund(Money.of(1, Currency.EUR), T0.plusSeconds(2));
+        p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T0.plusSeconds(2));
         assertThat(p.status()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(p.pullEvents()).singleElement().isInstanceOfSatisfying(PaymentRefunded.class,
                 e -> assertThat(e.totalRefunded()).isEqualTo(Money.of(1_000, Currency.EUR)));
@@ -278,8 +278,8 @@ class PaymentAggregateEdgeTest {
         assertThatThrownBy(() -> p.recordAttempt(null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> p.capture(null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> p.cancel(null)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> p.refund(null, t)).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> p.refund(Money.of(1, Currency.EUR), null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> p.refund(null, TestRefs.next(), t)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> p.refund(Money.of(1, Currency.EUR), TestRefs.next(), null)).isInstanceOf(NullPointerException.class);
         assertThat(p.status()).isEqualTo(PaymentStatus.PENDING);
         assertThat(p.updatedAt()).isEqualTo(T0);
         assertThatThrownBy(() -> Payment.create(null, REQUEST, T0)).isInstanceOf(NullPointerException.class);
@@ -291,11 +291,11 @@ class PaymentAggregateEdgeTest {
     @DisplayName("orden de comprobación del reembolso: divisa y signo antes que el estado, como documenta el Javadoc")
     void refundCheckOrder() {
         Payment pending = Payment.create(ID, REQUEST, T0);
-        assertThatThrownBy(() -> pending.refund(Money.of(1, Currency.USD), T0))
+        assertThatThrownBy(() -> pending.refund(Money.of(1, Currency.USD), TestRefs.next(), T0))
                 .isInstanceOf(CurrencyMismatchException.class);
-        assertThatThrownBy(() -> pending.refund(Money.of(-1, Currency.EUR), T0))
+        assertThatThrownBy(() -> pending.refund(Money.of(-1, Currency.EUR), TestRefs.next(), T0))
                 .isInstanceOf(InvalidValueException.class);
-        assertThatThrownBy(() -> pending.refund(Money.of(5_000, Currency.EUR), T0))
+        assertThatThrownBy(() -> pending.refund(Money.of(5_000, Currency.EUR), TestRefs.next(), T0))
                 .as("en PENDING lo que falla es el estado, no el importe")
                 .isInstanceOf(IllegalPaymentTransitionException.class);
     }
@@ -327,7 +327,7 @@ class PaymentAggregateEdgeTest {
     void entityEquality() {
         Payment a = Payment.create(ID, REQUEST, T0);
         Payment b = Payment.rehydrate(ID, REQUEST, PaymentStatus.FAILED, List.of(), null, null, "x",
-                Money.zero(Currency.EUR), T0, T0);
+                Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, T0);
         Payment c = Payment.create(PaymentId.of(UUID.randomUUID()), REQUEST, T0);
         assertThat(a).isEqualTo(b).hasSameHashCodeAs(b).isNotEqualTo(c);
         assertThatThrownBy(() -> PaymentId.of("no-es-un-uuid")).isInstanceOf(IllegalArgumentException.class);

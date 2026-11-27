@@ -121,7 +121,7 @@ class PaymentInvariantsPropertiesTest {
             case Cancel c -> p.cancel(now);
             case Refund r -> {
                 long base = p.amount().amountMinor() * r.permille() / 1_000 + r.delta();
-                p.refund(Money.of(base, r.currency()), now);
+                p.refund(Money.of(base, r.currency()), TestRefs.next(), now);
             }
         }
     }
@@ -170,7 +170,7 @@ class PaymentInvariantsPropertiesTest {
         // Todo estado alcanzable con métodos de negocio se puede guardar y volver a cargar.
         Payment reloaded = Payment.rehydrate(p.id(), p.request(), p.status(), p.attempts(),
                 p.authorizedBy().orElse(null), p.gatewayReference().orElse(null), p.failureReason().orElse(null),
-                p.refundedAmount(), p.createdAt(), p.updatedAt());
+                p.refundedAmount(), p.refunds(), p.createdAt(), p.updatedAt());
         assertThat(PaymentTransitionMatrixTest.Snapshot.of(reloaded))
                 .isEqualTo(PaymentTransitionMatrixTest.Snapshot.of(p));
         assertThat(reloaded.pullEvents()).isEmpty();
@@ -209,14 +209,14 @@ class PaymentInvariantsPropertiesTest {
         List<Long> parts = split(amount, weights);
         long sum = 0;
         for (int i = 0; i < parts.size(); i++) {
-            p.refund(Money.of(parts.get(i), Currency.EUR), T0.plusSeconds(10 + i));
+            p.refund(Money.of(parts.get(i), Currency.EUR), TestRefs.next(), T0.plusSeconds(10 + i));
             sum += parts.get(i);
             assertThat(p.refundedAmount().amountMinor()).isEqualTo(sum);
             assertThat(p.status()).isEqualTo(sum == amount ? REFUNDED : PARTIALLY_REFUNDED);
         }
         assertThat(p.status()).isEqualTo(REFUNDED);
         assertThat(p.remainingRefundable().isZero()).isTrue();
-        assertThatThrownBy(() -> p.refund(Money.of(1, Currency.EUR), T0.plusSeconds(100)))
+        assertThatThrownBy(() -> p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T0.plusSeconds(100)))
                 .isInstanceOf(IllegalPaymentTransitionException.class);
     }
 
@@ -228,11 +228,11 @@ class PaymentInvariantsPropertiesTest {
             return;
         }
         Payment p = captured(amount);
-        p.refund(Money.of(alreadyRefunded, Currency.EUR), T0.plusSeconds(10));
+        p.refund(Money.of(alreadyRefunded, Currency.EUR), TestRefs.next(), T0.plusSeconds(10));
         p.pullEvents();
         long remaining = amount - alreadyRefunded;
 
-        assertThatThrownBy(() -> p.refund(Money.of(remaining + 1, Currency.EUR), T0.plusSeconds(11)))
+        assertThatThrownBy(() -> p.refund(Money.of(remaining + 1, Currency.EUR), TestRefs.next(), T0.plusSeconds(11)))
                 .isInstanceOfSatisfying(RefundExceedsCapturedException.class, e -> {
                     assertThat(e.code()).isEqualTo("REFUND_EXCEEDS_CAPTURED");
                     assertThat(e.requested()).isEqualTo(Money.of(remaining + 1, Currency.EUR));
@@ -244,7 +244,7 @@ class PaymentInvariantsPropertiesTest {
         assertThat(p.updatedAt()).isEqualTo(T0.plusSeconds(10));
         assertThat(p.pullEvents()).isEmpty();
 
-        p.refund(Money.of(remaining, Currency.EUR), T0.plusSeconds(12));
+        p.refund(Money.of(remaining, Currency.EUR), TestRefs.next(), T0.plusSeconds(12));
         assertThat(p.status()).isEqualTo(REFUNDED);
     }
 
@@ -252,7 +252,7 @@ class PaymentInvariantsPropertiesTest {
     @Label("un reembolso de más en el primer intento, desde CAPTURED, también es RefundExceedsCaptured")
     void overRefundFromCaptured() {
         Payment p = captured(1_000);
-        assertThatThrownBy(() -> p.refund(Money.of(1_001, Currency.EUR), T0.plusSeconds(10)))
+        assertThatThrownBy(() -> p.refund(Money.of(1_001, Currency.EUR), TestRefs.next(), T0.plusSeconds(10)))
                 .isInstanceOf(RefundExceedsCapturedException.class);
         assertThat(p.status()).isEqualTo(CAPTURED);
     }
@@ -261,8 +261,8 @@ class PaymentInvariantsPropertiesTest {
     @Label("un reembolso enorme (Long.MAX_VALUE) tras uno parcial es RefundExceedsCaptured, no un desbordamiento")
     void hugeRefundAfterPartialIsRefundExceeds() {
         Payment p = captured(1_000);
-        p.refund(Money.of(1, Currency.EUR), T0.plusSeconds(10));
-        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), T0.plusSeconds(11)))
+        p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T0.plusSeconds(10));
+        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), T0.plusSeconds(11)))
                 .isInstanceOf(RefundExceedsCapturedException.class);
         assertThat(p.refundedAmount()).isEqualTo(Money.of(1, Currency.EUR));
     }
@@ -271,7 +271,7 @@ class PaymentInvariantsPropertiesTest {
     @Label("un reembolso enorme sobre un pago capturado sin reembolsos es RefundExceedsCaptured")
     void hugeRefundFromCaptured() {
         Payment p = captured(1_000);
-        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), T0.plusSeconds(11)))
+        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), T0.plusSeconds(11)))
                 .isInstanceOf(RefundExceedsCapturedException.class);
     }
 
@@ -279,8 +279,8 @@ class PaymentInvariantsPropertiesTest {
     @Label("un pago de Long.MAX_VALUE se puede reembolsar entero en dos partes")
     void hugePaymentRefundsExactly() {
         Payment p = captured(Long.MAX_VALUE);
-        p.refund(Money.of(Long.MAX_VALUE - 1, Currency.EUR), T0.plusSeconds(10));
-        p.refund(Money.of(1, Currency.EUR), T0.plusSeconds(11));
+        p.refund(Money.of(Long.MAX_VALUE - 1, Currency.EUR), TestRefs.next(), T0.plusSeconds(10));
+        p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T0.plusSeconds(11));
         assertThat(p.status()).isEqualTo(REFUNDED);
     }
 
@@ -339,7 +339,7 @@ class PaymentInvariantsPropertiesTest {
 
     private static Payment reload(Payment p) {
         return Payment.rehydrate(p.id(), p.request(), p.status(), p.attempts(), p.authorizedBy().orElse(null),
-                p.gatewayReference().orElse(null), p.failureReason().orElse(null), p.refundedAmount(),
+                p.gatewayReference().orElse(null), p.failureReason().orElse(null), p.refundedAmount(), p.refunds(),
                 p.createdAt(), p.updatedAt());
     }
 
@@ -360,7 +360,7 @@ class PaymentInvariantsPropertiesTest {
             if (part >= remaining) {
                 break;
             }
-            p.refund(Money.of(part, Currency.EUR), t);
+            p.refund(Money.of(part, Currency.EUR), TestRefs.next(), t);
             refunded += part;
         }
         p.pullEvents();
@@ -368,17 +368,17 @@ class PaymentInvariantsPropertiesTest {
         PaymentTransitionMatrixTest.Snapshot before = PaymentTransitionMatrixTest.Snapshot.of(p);
 
         if (remaining == Long.MAX_VALUE) {
-            p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), t);
+            p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), t);
             assertThat(p.status()).isEqualTo(REFUNDED);
             return;
         }
-        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), t))
+        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), t))
                 .isInstanceOfSatisfying(RefundExceedsCapturedException.class,
                         e -> assertThat(e.remainingRefundable()).isEqualTo(Money.of(remaining, Currency.EUR)));
         assertThat(PaymentTransitionMatrixTest.Snapshot.of(p)).isEqualTo(before);
         assertThat(p.pullEvents()).isEmpty();
         assertThat(p.remainingRefundable()).isEqualTo(Money.of(remaining, Currency.EUR));
-        p.refund(Money.of(remaining, Currency.EUR), t);
+        p.refund(Money.of(remaining, Currency.EUR), TestRefs.next(), t);
         assertThat(p.status()).isEqualTo(REFUNDED);
         assertThat(p.refundedAmount()).isEqualTo(Money.of(amount, Currency.EUR));
     }
@@ -391,7 +391,7 @@ class PaymentInvariantsPropertiesTest {
                 continue;
             }
             Payment p = PaymentTransitionMatrixTest.reachedByBusinessMethods(s);
-            assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), T0.plusSeconds(100)))
+            assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), T0.plusSeconds(100)))
                     .as(s.name()).isInstanceOf(IllegalPaymentTransitionException.class);
         }
     }
@@ -400,10 +400,10 @@ class PaymentInvariantsPropertiesTest {
     @Label("un pago de Long.MAX_VALUE: tras reembolsar 1, Long.MAX_VALUE es de más y Long.MAX_VALUE - 1 lo completa")
     void maxPaymentEdge() {
         Payment p = captured(Long.MAX_VALUE);
-        p.refund(Money.of(1, Currency.EUR), T0.plusSeconds(10));
-        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), T0.plusSeconds(11)))
+        p.refund(Money.of(1, Currency.EUR), TestRefs.next(), T0.plusSeconds(10));
+        assertThatThrownBy(() -> p.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), T0.plusSeconds(11)))
                 .isInstanceOf(RefundExceedsCapturedException.class);
-        p.refund(Money.of(Long.MAX_VALUE - 1, Currency.EUR), T0.plusSeconds(12));
+        p.refund(Money.of(Long.MAX_VALUE - 1, Currency.EUR), TestRefs.next(), T0.plusSeconds(12));
         assertThat(p.status()).isEqualTo(REFUNDED);
         assertThat(p.refundedAmount()).isEqualTo(Money.of(Long.MAX_VALUE, Currency.EUR));
     }

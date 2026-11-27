@@ -54,7 +54,7 @@ class PaymentMonotonicTimeTest {
             case PARTIALLY_REFUNDED -> {
                 p.authorize(GW, "ref", T0.plusSeconds(1));
                 p.capture(T0.plusSeconds(2));
-                p.refund(Money.of(400, Currency.EUR), LAST);
+                p.refund(Money.of(400, Currency.EUR), TestRefs.next(), LAST);
             }
             default -> throw new IllegalArgumentException(status.name());
         }
@@ -71,13 +71,13 @@ class PaymentMonotonicTimeTest {
                 op("capture", PaymentStatus.AUTHORIZED, (p, t) -> p.capture(t)),
                 op("cancel", PaymentStatus.AUTHORIZED, (p, t) -> p.cancel(t)),
                 op("refund parcial desde CAPTURED", PaymentStatus.CAPTURED,
-                        (p, t) -> p.refund(Money.of(1, Currency.EUR), t)),
+                        (p, t) -> p.refund(Money.of(1, Currency.EUR), TestRefs.next(), t)),
                 op("refund total desde CAPTURED", PaymentStatus.CAPTURED,
-                        (p, t) -> p.refund(Money.of(1_000, Currency.EUR), t)),
+                        (p, t) -> p.refund(Money.of(1_000, Currency.EUR), TestRefs.next(), t)),
                 op("refund parcial desde PARTIALLY_REFUNDED", PaymentStatus.PARTIALLY_REFUNDED,
-                        (p, t) -> p.refund(Money.of(1, Currency.EUR), t)),
+                        (p, t) -> p.refund(Money.of(1, Currency.EUR), TestRefs.next(), t)),
                 op("refund del resto desde PARTIALLY_REFUNDED", PaymentStatus.PARTIALLY_REFUNDED,
-                        (p, t) -> p.refund(Money.of(600, Currency.EUR), t)));
+                        (p, t) -> p.refund(Money.of(600, Currency.EUR), TestRefs.next(), t)));
     }
 
     private static Arguments op(String name, PaymentStatus from, BiConsumer<Payment, Instant> action) {
@@ -141,7 +141,7 @@ class PaymentMonotonicTimeTest {
     @DisplayName("un pago rehidratado usa su updatedAt guardado como referencia")
     void rehydratedPaymentUsesStoredUpdatedAt() {
         Payment p = Payment.rehydrate(PaymentId.of(UUID.randomUUID()), REQUEST, PaymentStatus.AUTHORIZED, List.of(),
-                GW, "ref", null, Money.zero(Currency.EUR), T0, LAST);
+                GW, "ref", null, Money.zero(Currency.EUR), TestRefs.refundsFor(Money.zero(Currency.EUR)), T0, LAST);
         assertThatThrownBy(() -> p.capture(LAST.minusMillis(1))).isInstanceOf(NonMonotonicTimeException.class);
         p.capture(LAST);
         assertThat(p.status()).isEqualTo(PaymentStatus.CAPTURED);
@@ -158,7 +158,7 @@ class PaymentMonotonicTimeTest {
         Payment pending = in(PaymentStatus.PENDING);
         assertThatThrownBy(() -> pending.capture(earlier)).isInstanceOf(IllegalPaymentTransitionException.class);
         assertThatThrownBy(() -> pending.cancel(earlier)).isInstanceOf(IllegalPaymentTransitionException.class);
-        assertThatThrownBy(() -> pending.refund(Money.of(1, Currency.EUR), earlier))
+        assertThatThrownBy(() -> pending.refund(Money.of(1, Currency.EUR), TestRefs.next(), earlier))
                 .isInstanceOf(IllegalPaymentTransitionException.class);
 
         Payment authorized = in(PaymentStatus.AUTHORIZED);
@@ -177,9 +177,9 @@ class PaymentMonotonicTimeTest {
     void refundExceedsWinsOverTime() {
         Instant earlier = LAST.minusSeconds(30);
         Payment partial = in(PaymentStatus.PARTIALLY_REFUNDED);
-        assertThatThrownBy(() -> partial.refund(Money.of(601, Currency.EUR), earlier))
+        assertThatThrownBy(() -> partial.refund(Money.of(601, Currency.EUR), TestRefs.next(), earlier))
                 .isInstanceOf(RefundExceedsCapturedException.class);
-        assertThatThrownBy(() -> partial.refund(Money.of(Long.MAX_VALUE, Currency.EUR), earlier))
+        assertThatThrownBy(() -> partial.refund(Money.of(Long.MAX_VALUE, Currency.EUR), TestRefs.next(), earlier))
                 .isInstanceOf(RefundExceedsCapturedException.class);
     }
 
@@ -191,9 +191,9 @@ class PaymentMonotonicTimeTest {
         assertThatThrownBy(() -> pending.authorize(GW, " ", earlier)).isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> pending.fail("", earlier)).isInstanceOf(InvalidValueException.class);
         Payment captured = in(PaymentStatus.CAPTURED);
-        assertThatThrownBy(() -> captured.refund(Money.of(1, Currency.USD), earlier))
+        assertThatThrownBy(() -> captured.refund(Money.of(1, Currency.USD), TestRefs.next(), earlier))
                 .isInstanceOf(CurrencyMismatchException.class);
-        assertThatThrownBy(() -> captured.refund(Money.zero(Currency.EUR), earlier))
+        assertThatThrownBy(() -> captured.refund(Money.zero(Currency.EUR), TestRefs.next(), earlier))
                 .isInstanceOf(InvalidValueException.class);
     }
 }

@@ -202,6 +202,33 @@ public final class CircuitBreaker {
                 trialsAcquiredAt.size());
     }
 
+    /**
+     * Foto del estado <em>efectivo</em> en {@code now}: lo que vería una petición que llegara
+     * en ese instante, pero sin hacer avanzar el breaker ni emitir eventos. Aplica las mismas
+     * reglas perezosas que {@link #allowsRequest}:
+     * <ul>
+     *   <li>OPEN con el tiempo de apertura vencido se ve como HALF_OPEN sin pruebas en vuelo.</li>
+     *   <li>En HALF_OPEN no cuentan las pruebas caducadas (concedidas hace {@code openDuration}
+     *       o más sin resultado).</li>
+     * </ul>
+     * Es lo que necesita el panel: una consulta no debe cambiar el estado compartido.
+     */
+    public CircuitBreakerSnapshot snapshotAt(Instant now) {
+        Objects.requireNonNull(now, "el instante no puede ser nulo");
+        if (state == CircuitState.OPEN && !now.isBefore(retryAtInstant())) {
+            return new CircuitBreakerSnapshot(gateway, CircuitState.HALF_OPEN, consecutiveFailures,
+                    Optional.empty(), Optional.empty(), 0);
+        }
+        if (state == CircuitState.HALF_OPEN) {
+            int live = (int) trialsAcquiredAt.stream()
+                    .filter(acquiredAt -> now.isBefore(acquiredAt.plus(config.openDuration())))
+                    .count();
+            return new CircuitBreakerSnapshot(gateway, CircuitState.HALF_OPEN, consecutiveFailures,
+                    Optional.empty(), Optional.empty(), live);
+        }
+        return snapshot();
+    }
+
     public GatewayId gateway() {
         return gateway;
     }

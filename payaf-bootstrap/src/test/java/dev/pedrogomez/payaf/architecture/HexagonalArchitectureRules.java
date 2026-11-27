@@ -14,12 +14,13 @@ import com.tngtech.archunit.lang.ArchRule;
  * sobre clases fixture con la misma estructura de paquetes para demostrar que cada
  * regla falla cuando se viola. Así las dos suites evalúan exactamente la misma regla.
  * <p>
- * Las reglas del dominio ya no admiten estar vacías: el dominio tiene clases desde la
- * fase 2 y, si un día la regla no encontrara ninguna (por un paquete mal escrito, por
- * ejemplo), debe fallar en lugar de pasar sin comprobar nada. Las fixtures siempre
- * incluyen una clase de dominio ({@code CleanMoney}), así que no les afecta. Las reglas de
- * la aplicación y de los adaptadores siguen con {@code allowEmptyShould(true)} hasta que
- * esas capas tengan clases.
+ * Las reglas del dominio y de la aplicación ya no admiten estar vacías: el dominio tiene
+ * clases desde la fase 2 y la aplicación desde la fase 3. Si un día una regla no encontrara
+ * ninguna (por un paquete mal escrito, por ejemplo), debe fallar en lugar de pasar sin
+ * comprobar nada. Las fixtures siempre incluyen una clase de dominio ({@code CleanMoney}) y
+ * dos de aplicación ({@code CleanPaymentRepository}, {@code CleanAuthorizeService}), así que
+ * no les afecta. La regla de los adaptadores sigue con {@code allowEmptyShould(true)} hasta
+ * que esa capa tenga clases.
  */
 final class HexagonalArchitectureRules {
 
@@ -46,8 +47,7 @@ final class HexagonalArchitectureRules {
         return classes()
                 .that().resideInAPackage(application(root))
                 .should().onlyDependOnClassesThat().resideInAnyPackage(application(root), domain(root), "java..")
-                .because("la aplicación solo conoce el dominio, sus propios puertos y el JDK")
-                .allowEmptyShould(true);
+                .because("la aplicación solo conoce el dominio, sus propios puertos y el JDK");
     }
 
     static ArchRule adaptersDoNotDependOnEachOther(String root) {
