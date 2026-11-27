@@ -22,6 +22,9 @@ payaf:
   outbox:
     relay:
       enabled: true
+  # Demo pública: como mucho N pagos (POST /api/payments) por minuto y por IP; si no, 429 RATE_LIMITED
+  demo:
+    payments-per-minute: 30
   # Las PSP simuladas mandan webhooks firmados tras capturar y reembolsar
   sim:
     webhooks:

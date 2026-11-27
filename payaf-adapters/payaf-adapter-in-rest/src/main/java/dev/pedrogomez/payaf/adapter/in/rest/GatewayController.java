@@ -13,6 +13,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -71,6 +72,19 @@ public class GatewayController {
     @DeleteMapping("/api/chaos/{gateway}")
     public ChaosDto resetChaos(@PathVariable String gateway) {
         return dto(gateway, chaos.reset(gateway));
+    }
+
+    /** Datos fijos de la demo: persistencia activa, timeout, umbrales del breaker y límite de pagos. */
+    @GetMapping("/api/demo")
+    public ChaosAdmin.DemoInfo demo() {
+        return chaos.info();
+    }
+
+    /** Restaura la demo compartida y devuelve cómo quedan las pasarelas. */
+    @PostMapping("/api/demo/reset")
+    public List<GatewayDto> resetDemo() {
+        chaos.resetDemo();
+        return gateways();
     }
 
     private static ChaosDto dto(String gateway, ChaosSettings s) {

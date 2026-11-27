@@ -37,10 +37,13 @@ class SimulatedWebhookDispatcher implements WebhookSink, ApplicationListener<Web
     });
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
     private volatile int port = -1;
+    private volatile String contextPath = "";
 
     @Override
     public void onApplicationEvent(WebServerInitializedEvent event) {
         port = event.getWebServer().getPort();
+        // Con server.servlet.context-path (p. ej. /proyecto/PayAF) los webhooks cuelgan de ahí.
+        contextPath = event.getApplicationContext().getEnvironment().getProperty("server.servlet.context-path", "");
     }
 
     @Override
@@ -56,7 +59,7 @@ class SimulatedWebhookDispatcher implements WebhookSink, ApplicationListener<Web
     private void send(SimulatedWebhook webhook) {
         try {
             HttpRequest.Builder request = HttpRequest.newBuilder(
-                            URI.create("http://localhost:" + port + "/webhooks/" + webhook.gateway()))
+                            URI.create("http://localhost:" + port + contextPath + "/webhooks/" + webhook.gateway()))
                     .timeout(Duration.ofSeconds(5))
                     .header("Content-Type", webhook.contentType())
                     .POST(HttpRequest.BodyPublishers.ofString(webhook.body()));

@@ -17,7 +17,15 @@ import dev.pedrogomez.payaf.application.service.QueryGatewayHealthService;
 import dev.pedrogomez.payaf.application.service.QueryPaymentsService;
 import dev.pedrogomez.payaf.application.service.ReapStalePaymentsService;
 import dev.pedrogomez.payaf.application.service.RelayOutboxService;
+import dev.pedrogomez.payaf.application.port.in.AuthorizePaymentUseCase;
+import dev.pedrogomez.payaf.application.port.in.CancelPaymentUseCase;
+import dev.pedrogomez.payaf.application.port.in.CapturePaymentUseCase;
+import dev.pedrogomez.payaf.application.port.in.HandleGatewayNotificationUseCase;
+import dev.pedrogomez.payaf.application.port.in.PaymentView;
+import dev.pedrogomez.payaf.application.port.in.RefundPaymentUseCase;
 import dev.pedrogomez.payaf.domain.payment.PaymentId;
+import dev.pedrogomez.payaf.domain.shared.Money;
+import dev.pedrogomez.payaf.trace.PortTracer;
 import dev.pedrogomez.payaf.domain.routing.CircuitBreakerConfig;
 import java.time.Clock;
 import java.util.UUID;
@@ -59,28 +67,90 @@ public class ApplicationConfig {
         return properties.toDomain();
     }
 
+    /**
+     * Autorizar. Los tres casos de uso que mueven pagos reciben sus puertos envueltos por el
+     * {@link PortTracer} y salen envueltos ellos mismos como puerto de entrada: es la traza
+     * {@code port.touched} del panel. Los servicios no cambian; solo cambia lo que se les inyecta.
+     */
     @Bean
-    AuthorizePaymentService authorizePaymentService(PaymentRepository payments, IdempotencyStore idempotency,
+    AuthorizePaymentUseCase authorizePaymentService(PaymentRepository payments, IdempotencyStore idempotency,
                                                     GatewayCatalog catalog, CircuitBreakerStore breakers,
                                                     EventPublisher events, TransactionRunner transactions,
-                                                    PaymentIdGenerator ids, Clock clock) {
-        return new AuthorizePaymentService(payments, idempotency, catalog, breakers, events, transactions, ids, clock);
+                                                    PaymentIdGenerator ids, Clock clock, PortTracer tracer) {
+        TracedPorts p = new TracedPorts(tracer, payments, catalog, breakers, events, transactions);
+        return tracer.driving(AuthorizePaymentUseCase.class, new AuthorizePaymentService(p.payments,
+                traced(tracer, IdempotencyStore.class, idempotency), p.catalog, p.breakers, p.events,
+                p.transactions, ids, clock));
     }
 
     /** Implementa a la vez captura, reembolso y anulación. */
     @Bean
-    PaymentOperationsService paymentOperationsService(PaymentRepository payments, GatewayCatalog catalog,
-                                                      CircuitBreakerStore breakers, EventPublisher events,
-                                                      TransactionRunner transactions, Clock clock) {
-        return new PaymentOperationsService(payments, catalog, breakers, events, transactions, clock);
+    PaymentOperations paymentOperationsService(PaymentRepository payments, GatewayCatalog catalog,
+                                               CircuitBreakerStore breakers, EventPublisher events,
+                                               TransactionRunner transactions, Clock clock, PortTracer tracer) {
+        TracedPorts p = new TracedPorts(tracer, payments, catalog, breakers, events, transactions);
+        PaymentOperationsService service = new PaymentOperationsService(p.payments, p.catalog, p.breakers, p.events,
+                p.transactions, clock);
+        return tracer.driving(PaymentOperations.class, new PaymentOperations() {
+            @Override
+            public PaymentView capture(PaymentId id) {
+                return service.capture(id);
+            }
+
+            @Override
+            public PaymentView cancel(PaymentId id) {
+                return service.cancel(id);
+            }
+
+            @Override
+            public PaymentView refund(PaymentId id, Money amount) {
+                return service.refund(id, amount);
+            }
+        });
     }
 
     @Bean
-    HandleGatewayNotificationService handleGatewayNotificationService(PaymentRepository payments,
+    HandleGatewayNotificationUseCase handleGatewayNotificationService(PaymentRepository payments,
                                                                       ProcessedNotificationStore processed,
                                                                       EventPublisher events,
-                                                                      TransactionRunner transactions, Clock clock) {
-        return new HandleGatewayNotificationService(payments, processed, events, transactions, clock);
+                                                                      TransactionRunner transactions, Clock clock,
+                                                                      PortTracer tracer) {
+        String persistence = PortTracer.persistenceAdapter(payments);
+        return tracer.driving(HandleGatewayNotificationUseCase.class, new HandleGatewayNotificationService(
+                tracer.driven(PaymentRepository.class, payments, persistence),
+                tracer.driven(ProcessedNotificationStore.class, processed, persistence),
+                tracer.driven(EventPublisher.class, events, OUTBOX),
+                tracer.driven(TransactionRunner.class, transactions, persistence), clock));
+    }
+
+    /** Captura, anulación y reembolso juntos, como los implementa {@link PaymentOperationsService}. */
+    public interface PaymentOperations extends CapturePaymentUseCase, CancelPaymentUseCase, RefundPaymentUseCase {
+    }
+
+    /** En el hexágono del panel, el publicador de eventos es el nodo «Outbox» en los dos perfiles. */
+    private static final String OUTBOX = "outbox";
+
+    private static <T> T traced(PortTracer tracer, Class<T> port, T target) {
+        return tracer.driven(port, target, PortTracer.persistenceAdapter(target));
+    }
+
+    /** Los puertos de salida comunes, envueltos para la traza. */
+    private static final class TracedPorts {
+
+        final PaymentRepository payments;
+        final GatewayCatalog catalog;
+        final CircuitBreakerStore breakers;
+        final EventPublisher events;
+        final TransactionRunner transactions;
+
+        TracedPorts(PortTracer tracer, PaymentRepository payments, GatewayCatalog catalog,
+                    CircuitBreakerStore breakers, EventPublisher events, TransactionRunner transactions) {
+            this.payments = traced(tracer, PaymentRepository.class, payments);
+            this.catalog = tracer.catalog(catalog);
+            this.breakers = traced(tracer, CircuitBreakerStore.class, breakers);
+            this.events = tracer.driven(EventPublisher.class, events, OUTBOX);
+            this.transactions = traced(tracer, TransactionRunner.class, transactions);
+        }
     }
 
     @Bean

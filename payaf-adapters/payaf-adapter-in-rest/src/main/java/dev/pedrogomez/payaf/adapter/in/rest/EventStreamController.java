@@ -14,7 +14,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * Cada conexión se suscribe al {@link EventFeed} y reenvía cada evento como un mensaje SSE con
  * {@code id} (la posición en el outbox, para que el cliente detecte repetidos), {@code event} (el
  * tipo, p. ej. {@code PaymentAuthorized}) y {@code data} (JSON). Al cerrarse la conexión, por el
- * cliente, por error o por tiempo, se cancela la suscripción.
+ * cliente, por error o por tiempo, se cancela la suscripción. Los eventos que no salen del outbox
+ * (la traza de puertos, {@code port.touched}) llegan con {@code id} 0 y se envían sin {@code id}.
  */
 @RestController
 public class EventStreamController {
@@ -49,8 +50,11 @@ public class EventStreamController {
         emitter.send(SseEmitter.event().comment("conectado"));
         subscription.set(feed.subscribe(event -> {
             try {
-                emitter.send(SseEmitter.event().id(Long.toString(event.id())).name(event.type())
-                        .data(event, MediaType.APPLICATION_JSON));
+                SseEmitter.SseEventBuilder message = SseEmitter.event().name(event.type());
+                if (event.id() > 0) {
+                    message.id(Long.toString(event.id()));
+                }
+                emitter.send(message.data(event, MediaType.APPLICATION_JSON));
             } catch (IOException | IllegalStateException e) {
                 unsubscribe.run();
                 emitter.completeWithError(e);

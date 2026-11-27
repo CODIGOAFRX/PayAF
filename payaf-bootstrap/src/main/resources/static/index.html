@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayAF · panel en vivo del enrutador de pagos</title>
+  <meta name="description" content="Demo en vivo de PayAF: un enrutador de pagos multi-PSP con failover y arquitectura hexagonal. Tumba una pasarela, lanza un pago y mira qué adaptadores toca.">
+  <meta name="theme-color" content="#e8ebed">
+  <script>
+    // La app vive bajo un prefijo (/proyecto/PayAF/) y todas sus rutas son relativas: sin la barra
+    // final, «api/...» y «assets/...» apuntarían al directorio de arriba.
+    (function () {
+      var p = location.pathname;
+      if (!p.endsWith('/') && !/\.[a-z0-9]+$/i.test(p)) {
+        location.replace(p + '/' + location.search + location.hash);
+      }
+    })();
+  </script>
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/barlow-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/barlow-condensed-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/app.css">
+  <script type="module" src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#launch">Saltar al lanzador de pagos</a>
+
+<header class="topbar">
+  <div class="brand">
+    <h1 class="wordmark">PayAF</h1>
+    <span class="tagline">Enrutador de pagos multi-PSP · arquitectura hexagonal</span>
+  </div>
+  <div class="topbar-status">
+    <span class="chip" id="persistence-chip" hidden>Persistencia: <strong id="persistence-name">memory</strong></span>
+    <span class="live-status" id="sse-status" data-state="connecting" role="status">
+      <span class="dot" aria-hidden="true"></span><span class="live-text">Conectando…</span>
+    </span>
+    <button type="button" class="btn btn-quiet" id="reset-demo">
+      <svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9a9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      Restaurar demo
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="banner" role="alert" hidden>
+  <p class="banner-text" id="banner-text"></p>
+  <button type="button" class="btn btn-small" id="banner-retry" hidden>Reintentar</button>
+</div>
+
+<main class="layout">
+  <!-- Lanzar un pago -->
+  <section class="panel launch" id="launch" aria-labelledby="launch-title" tabindex="-1">
+    <h2 class="panel-title" id="launch-title">Lanzar un pago</h2>
+    <p class="hint">Un clic y el pago sale. Mira el hexágono.</p>
+    <div class="presets" role="group" aria-label="Pagos de ejemplo">
+      <button type="button" class="btn btn-preset" data-preset="es">
+        <span class="preset-main">100 € en España</span>
+        <span class="preset-sub">EUR · ES · gana la más barata</span>
+      </button>
+      <button type="button" class="btn btn-preset" data-preset="us">
+        <span class="preset-main">100 $ en EE. UU.</span>
+        <span class="preset-sub">USD · US · Redsys no puede</span>
+      </button>
+      <button type="button" class="btn btn-preset" data-preset="declined">
+        <span class="preset-main">Rechazado (acaba en ,51)</span>
+        <span class="preset-sub">100,51 € · DECLINED sin failover</span>
+      </button>
+      <button type="button" class="btn btn-preset" data-preset="jp">
+        <span class="preset-main">¥ en Japón</span>
+        <span class="preset-sub">JPY · JP · solo Adyen y Mock</span>
+      </button>
+    </div>
+
+    <form class="pay-form" id="pay-form" novalidate>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-amount">Importe</label>
+          <input id="f-amount" name="amount" inputmode="decimal" autocomplete="off" value="40.00" required>
+        </div>
+        <div class="field">
+          <label for="f-currency">Divisa</label>
+          <select id="f-currency" name="currency">
+            <option>EUR</option><option>USD</option><option>GBP</option><option>JPY</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-country">País</label>
+          <select id="f-country" name="country">
+            <option value="ES">ES · España</option>
+            <option value="US">US · Estados Unidos</option>
+            <option value="GB">GB · Reino Unido</option>
+            <option value="JP">JP · Japón</option>
+            <option value="FR">FR · Francia</option>
+            <option value="DE">DE · Alemania</option>
+            <option value="MX">MX · México</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-ref">Referencia</label>
+          <input id="f-ref" name="merchantReference" autocomplete="off" maxlength="60" required>
+        </div>
+      </div>
+      <p class="field-error" id="form-error" hidden></p>
+      <button type="submit" class="btn btn-primary" id="f-submit">Lanzar pago</button>
+    </form>
+
+    <div class="idem">
+      <p class="idem-key">Clave de idempotencia <span id="idem-none">(se genera al lanzar)</span><code id="idem-key" hidden></code></p>
+      <button type="button" class="btn btn-small" id="replay" disabled>
+        <svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="m17 2l4 4l-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4l4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+        Repetir con la misma clave
+      </button>
+      <p class="idem-help">Misma clave y misma orden: el núcleo devuelve el pago guardado sin llamar a ninguna pasarela.</p>
+    </div>
+  </section>
+
+  <!-- El hexágono -->
+  <section class="panel hexa" aria-labelledby="hexa-title">
+    <div class="panel-head">
+      <h2 class="panel-title" id="hexa-title">El hexágono, en vivo</h2>
+      <p class="hexa-now" id="hexa-now">Cada operación ilumina, en orden, los puertos y adaptadores que toca.</p>
+    </div>
+    <div class="hexa-stage" id="hexa-stage">
+      <!-- app.js dibuja aquí el SVG -->
+    </div>
+    <div class="trace">
+      <div class="trace-head">
+        <h3 class="sub-title" id="trace-title">Traza de la última operación</h3>
+        <span class="trace-meta" id="trace-meta"></span>
+      </div>
+      <ol class="trace-list" id="trace-list" aria-labelledby="trace-title">
+        <li class="empty">Aún no hay traza. Lanza un pago y aparecerá aquí, puerto a puerto, con lo que tardó cada uno.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Resultado -->
+  <section class="panel result" aria-labelledby="result-title">
+    <div class="panel-head">
+      <h2 class="panel-title" id="result-title">Resultado</h2>
+      <div class="board-module" id="result-status" aria-hidden="true"></div>
+    </div>
+    <p class="sr-only" id="result-live" aria-live="polite"></p>
+    <div id="result-body">
+      <div class="result-empty">
+        <p><strong>Ningún pago todavía.</strong></p>
+        <p>Pulsa «100 € en España»: Redsys es la más barata y lo cobra. Después tumba Redsys en su tarjeta y repite para ver el failover.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pasarelas -->
+  <section class="gateways" aria-labelledby="gw-title">
+    <div class="section-head">
+      <h2 class="panel-title" id="gw-title">Pasarelas</h2>
+      <p class="hint" id="gw-hint">Rómpelas a tu gusto: el estado es compartido con quien esté mirando ahora.</p>
+    </div>
+    <div class="gw-grid" id="gw-grid" aria-busy="true">
+      <div class="gw-card skeleton" aria-hidden="true"></div>
+      <div class="gw-card skeleton" aria-hidden="true"></div>
+      <div class="gw-card skeleton" aria-hidden="true"></div>
+      <div class="gw-card skeleton" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <!-- Registro de eventos -->
+  <section class="events" aria-labelledby="log-title">
+    <div class="section-head">
+      <h2 class="panel-title" id="log-title">Registro de eventos</h2>
+      <p class="hint">Eventos de dominio por SSE, el más reciente arriba. Se guardan las últimas 200 líneas.</p>
+      <div class="log-tools">
+        <span class="log-pending" id="log-pending" hidden></span>
+        <button type="button" class="btn btn-small" id="log-pause" aria-pressed="false">
+          <svg class="ic ic-pause" aria-hidden="true" viewBox="0 0 24 24"><rect width="5" height="18" x="14" y="3" rx="1"/><rect width="5" height="18" x="5" y="3" rx="1"/></svg>
+          <svg class="ic ic-play" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
+          <span class="log-pause-label">Pausar</span>
+        </button>
+      </div>
+    </div>
+    <div class="board log">
+      <div class="log-cols" aria-hidden="true">
+        <span>Hora</span><span>Evento</span><span>Detalle</span>
+      </div>
+      <ol class="log-list" id="log-list" aria-label="Eventos recibidos">
+        <li class="log-empty">Esperando eventos. Lanza un pago y llegarán aquí en directo.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>
+    <a href="https://github.com/CODIGOAFRX/PayAF" rel="noopener">
+      <img src="assets/icons/github.svg" alt="" width="16" height="16" class="ic-img">Código en GitHub
+    </a>
+    <span aria-hidden="true">·</span>
+    <a href="https://pedrogomez.dev" rel="noopener">pedrogomez.dev</a>
+  </p>
+  <p class="footer-note">Pasarelas simuladas con datos de demostración. Stripe, Adyen y Redsys son marcas de sus propietarios.</p>
+</footer>
+</body>
+</html>

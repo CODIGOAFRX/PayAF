@@ -138,6 +138,25 @@ Los errores son `application/problem+json` (RFC 9457) con un `code` estable:
 | `GATEWAY_OPERATION_FAILED` | 502 |
 | `OPERATION_UNRECORDED`, `AUTHORIZATION_UNRECORDED`, `INCONSISTENT_STATE` | 500 |
 | `INVALID_BODY`, `MISSING_HEADER` | 400 |
+| `RATE_LIMITED` (límite de la demo pública) | 429 |
+
+### Panel en vivo y demo pública
+
+El panel (`/`, estáticos en `payaf-bootstrap/src/main/resources/static`, sin build ni CDN) usa rutas
+relativas, así que funciona igual en la raíz que bajo `server.servlet.context-path=/proyecto/PayAF`.
+
+- `GET /api/demo`: persistencia activa (`memory` o `postgres`), timeout de las pasarelas, umbrales del
+  breaker y límite de pagos.
+- `POST /api/demo/reset`: «Restaurar demo». Quita todas las averías, habilita las cuatro pasarelas y
+  deja los breakers en CLOSED; devuelve las pasarelas.
+- **Traza de puertos.** Cada petición lleva `X-Request-Id` (el del cliente si es válido, o uno nuevo, y
+  siempre vuelve en la respuesta). Autorizar, capturar, cancelar, reembolsar y los webhooks emiten por
+  el SSE eventos `port.touched` (`correlationId`, `side` driving|driven, `port`, `adapter`, `operation`,
+  `outcome`, `code`, `ms`, `seq`); el puerto driving llega el último y cierra la traza. Son decoradores
+  cableados en bootstrap (`dev.pedrogomez.payaf.trace`): el dominio y la aplicación no saben que existen.
+- **Límite de la demo:** 30 pagos (`POST /api/payments`) por minuto y por IP (`CF-Connecting-IP`,
+  `X-Forwarded-For` o la dirección remota), en memoria. Si se pasa: 429 `RATE_LIMITED` con `Retry-After`.
+  Se cambia con `payaf.demo.payments-per-minute`.
 
 Dos interfaces de la REST no son puertos de la aplicación: `EventFeed` (de dónde salen los
 eventos del SSE) y `ChaosAdmin` (la consola del simulador). La REST no puede importar el outbox ni

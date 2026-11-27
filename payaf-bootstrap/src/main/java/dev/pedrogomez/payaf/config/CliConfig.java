@@ -9,7 +9,9 @@ import dev.pedrogomez.payaf.application.port.in.RefundPaymentUseCase;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import dev.pedrogomez.payaf.trace.TraceContext;
 import java.util.Arrays;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -46,8 +48,12 @@ public class CliConfig {
                 return;
             }
             String[] commandArgs = Arrays.copyOfRange(args, index + 1, args.length);
-            int code = cli.execute(new PrintWriter(System.out, true, StandardCharsets.UTF_8),
-                    new PrintWriter(System.err, true, StandardCharsets.UTF_8), commandArgs);
+            int code;
+            // La CLI es otro adaptador driving: su entrada también abre una traza (canal «cli»).
+            try (TraceContext.Scope ignored = TraceContext.open(UUID.randomUUID().toString(), "cli")) {
+                code = cli.execute(new PrintWriter(System.out, true, StandardCharsets.UTF_8),
+                        new PrintWriter(System.err, true, StandardCharsets.UTF_8), commandArgs);
+            }
             if (exit) {
                 System.exit(SpringApplication.exit(context, () -> code));
             }

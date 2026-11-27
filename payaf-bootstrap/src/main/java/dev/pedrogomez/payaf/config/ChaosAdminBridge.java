@@ -3,26 +3,42 @@ package dev.pedrogomez.payaf.config;
 import dev.pedrogomez.payaf.adapter.in.rest.ChaosAdmin;
 import dev.pedrogomez.payaf.adapter.out.gatewaysim.FaultConfig;
 import dev.pedrogomez.payaf.adapter.out.gatewaysim.GatewayChaosControl;
+import dev.pedrogomez.payaf.adapter.out.gatewaysim.GatewaySimulator;
 import dev.pedrogomez.payaf.adapter.out.gatewaysim.SimulatedGatewayCatalog;
+import dev.pedrogomez.payaf.application.port.out.CircuitBreakerStore;
+import dev.pedrogomez.payaf.demo.BreakerReset;
+import dev.pedrogomez.payaf.demo.SlidingWindowRateLimiter;
+import dev.pedrogomez.payaf.domain.routing.CircuitBreakerConfig;
+import dev.pedrogomez.payaf.domain.routing.GatewayProfile;
 import dev.pedrogomez.payaf.domain.shared.GatewayId;
 import dev.pedrogomez.payaf.domain.shared.InvalidValueException;
+import dev.pedrogomez.payaf.trace.PortTracer;
 import java.time.Duration;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
  * Implementa el {@link ChaosAdmin} de la REST delegando en la administración del simulador
- * ({@link GatewayChaosControl} y {@link SimulatedGatewayCatalog}). Es un puente entre dos
- * adaptadores, y por eso está en bootstrap: ni la REST conoce el simulador ni al revés.
+ * ({@link GatewayChaosControl} y {@link SimulatedGatewayCatalog}) y, para restaurar la demo, en
+ * {@link BreakerReset}. Es un puente entre adaptadores, y por eso está en bootstrap: ni la REST
+ * conoce el simulador ni al revés.
  */
 @Component
 class ChaosAdminBridge implements ChaosAdmin {
 
     private final GatewayChaosControl chaos;
     private final SimulatedGatewayCatalog catalog;
+    private final BreakerReset breakerReset;
+    private final DemoInfo info;
 
-    ChaosAdminBridge(GatewayChaosControl chaos, SimulatedGatewayCatalog catalog) {
+    ChaosAdminBridge(GatewayChaosControl chaos, SimulatedGatewayCatalog catalog, BreakerReset breakerReset,
+                     CircuitBreakerStore breakers, CircuitBreakerConfig breakerConfig, GatewaySimulator simulator,
+                     SlidingWindowRateLimiter limiter) {
         this.chaos = chaos;
         this.catalog = catalog;
+        this.breakerReset = breakerReset;
+        this.info = new DemoInfo(PortTracer.persistenceAdapter(breakers), simulator.timeout().toMillis(),
+                breakerConfig.failureThreshold(), breakerConfig.openDuration().toMillis(), limiter.limit());
     }
 
     @Override
@@ -53,6 +69,19 @@ class ChaosAdminBridge implements ChaosAdmin {
     @Override
     public void setEnabled(String gateway, boolean enabled) {
         catalog.setEnabled(known(gateway), enabled);
+    }
+
+    @Override
+    public void resetDemo() {
+        chaos.resetAll();
+        List<GatewayId> ids = catalog.profiles().stream().map(GatewayProfile::id).toList();
+        ids.forEach(id -> catalog.setEnabled(id, true));
+        breakerReset.closeAll(ids);
+    }
+
+    @Override
+    public DemoInfo info() {
+        return info;
     }
 
     private GatewayId known(String gateway) {

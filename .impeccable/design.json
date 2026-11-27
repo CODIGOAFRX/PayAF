@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-27T19:20:00Z",
+  "title": "Design System: PayAF · panel en vivo",
+  "extensions": {
+    "colorMeta": {
+      "live": { "role": "primary", "displayName": "Amarillo de tablero", "tonalRamp": ["#3d2f00", "#5c4700", "#7a5f00", "#a37f00", "#d1a300", "#f5c400", "#ffe170", "#fff3bf"] },
+      "board": { "role": "neutral", "displayName": "Negro de tablero", "tonalRamp": ["#050607", "#16181b", "#23262b", "#33373d", "#4a5058", "#6b7279", "#a3a9ae", "#d7dadd"] },
+      "concourse-ground": { "role": "neutral", "displayName": "Suelo del vestíbulo", "tonalRamp": ["#14181c", "#2c3237", "#434c55", "#5d6872", "#aeb7be", "#d2d8dc", "#e8ebed", "#f4f6f7"] },
+      "ink": { "role": "neutral", "displayName": "Tinta" },
+      "ok": { "role": "status", "displayName": "CLOSED / aprobado" },
+      "warn": { "role": "status", "displayName": "HALF_OPEN / rechazado" },
+      "bad": { "role": "status", "displayName": "OPEN / error" }
+    },
+    "typographyMeta": {
+      "flap": { "displayName": "Lamas", "purpose": "Estados en módulos de tablero, en mayúsculas." },
+      "board-label": { "displayName": "Etiqueta de tablero", "purpose": "Cabeceras de columna del registro y títulos dentro del SVG." },
+      "code": { "displayName": "Datos", "purpose": "Códigos nativos de PSP, referencias, claves y puertos." }
+    },
+    "shadows": [
+      { "name": "panel", "value": "0 1px 2px rgb(20 24 28 / 0.06), 0 2px 8px rgb(20 24 28 / 0.05)", "purpose": "Paneles y tarjetas." },
+      { "name": "toast", "value": "0 6px 24px rgb(20 24 28 / 0.18), 0 1px 3px rgb(20 24 28 / 0.12)", "purpose": "Aviso flotante." },
+      { "name": "focus", "value": "outline 2px ink + 0 0 0 5px live", "purpose": "Foco visible de teclado." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Transiciones de estado (150-200ms)." },
+      { "name": "flap-down", "value": "70ms cubic-bezier(0.5, 0, 0.75, 0)", "purpose": "Media vuelta de una lama al cambiar de carácter." },
+      { "name": "flap-up", "value": "110ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Vuelta final de la lama; 24ms de escalonado entre celdas." },
+      { "name": "trace-step", "value": "260ms (110ms con cola)", "purpose": "Duración de cada paso de la traza en el hexágono." },
+      { "name": "press", "value": "translateY(1px) scale(0.985), 100ms", "purpose": "Botón hundido al pulsar." }
+    ],
+    "breakpoints": [
+      { "name": "two-columns", "value": "1279px" },
+      { "name": "one-column", "value": "759px" },
+      { "name": "hexagon-vertical", "value": "600px (anchura del escenario)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Acción secundaria; cambia en hover y se hunde al pulsar.",
+      "html": "<button class=\"ds-btn\">Capturar</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 14px;border:1px solid #aeb7be;border-radius:6px;background:#fff;color:#14181c;font:500 14px/1.2 Barlow,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,border-color 150ms,transform 100ms}.ds-btn:hover{background:#f4f6f7;border-color:#5d6872}.ds-btn:active{transform:translateY(1px) scale(.985);box-shadow:inset 0 2px 3px rgb(20 24 28/.12)}.ds-btn:focus-visible{outline:2px solid #14181c;outline-offset:2px;box-shadow:0 0 0 5px #f5c400}"
+    },
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Lanzar pago.",
+      "html": "<button class=\"ds-btn-primary\">Lanzar pago</button>",
+      "css": ".ds-btn-primary{min-height:36px;padding:7px 14px;border:1px solid #14181c;border-radius:6px;background:#14181c;color:#fff;font:600 14px/1.2 Barlow,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,transform 100ms}.ds-btn-primary:hover{background:#2a3036}.ds-btn-primary:active{transform:translateY(1px) scale(.985)}.ds-btn-primary:focus-visible{outline:2px solid #14181c;outline-offset:2px;box-shadow:0 0 0 5px #f5c400}"
+    },
+    {
+      "name": "Preset de pago",
+      "kind": "button",
+      "refersTo": "button-preset",
+      "description": "Lanza un pago de ejemplo con un clic.",
+      "html": "<button class=\"ds-preset\"><span class=\"ds-preset-main\">100 € en España</span><span class=\"ds-preset-sub\">EUR · ES · gana la más barata</span></button>",
+      "css": ".ds-preset{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:62px;padding:9px 11px;border:1px solid #aeb7be;border-radius:6px;background:#f4f6f7;color:#14181c;text-align:left;font-family:Barlow,system-ui,sans-serif;cursor:pointer;transition:background-color 150ms,transform 100ms}.ds-preset:hover{background:#fff3bf;border-color:#7a5f00}.ds-preset:active{transform:translateY(1px) scale(.985)}.ds-preset-main{font-weight:600;font-size:14px}.ds-preset-sub{font-size:12px;color:#5d6872}"
+    },
+    {
+      "name": "Módulo de tablero",
+      "kind": "custom",
+      "refersTo": "board-module",
+      "description": "Estado del breaker o del pago en lamas con lámpara.",
+      "html": "<div class=\"ds-board\" role=\"img\" aria-label=\"Circuit breaker: CLOSED\"><span class=\"ds-lamp\"></span><span class=\"ds-cell\">C</span><span class=\"ds-cell\">L</span><span class=\"ds-cell\">O</span><span class=\"ds-cell\">S</span><span class=\"ds-cell\">E</span><span class=\"ds-cell\">D</span></div>",
+      "css": ".ds-board{display:inline-flex;align-items:center;gap:2px;padding:5px 7px;background:#16181b;border-radius:4px;color:#f2eee3}.ds-lamp{width:9px;height:9px;border-radius:50%;background:#43d17f;margin-right:6px}.ds-cell{position:relative;min-width:.7em;padding:1px 1px 0;background:#23262b;border-radius:2px;font:600 17px/1.25 'Barlow Condensed',Barlow,sans-serif;text-align:center}.ds-cell::after{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:#050607}"
+    },
+    {
+      "name": "Módulo OPEN invertido",
+      "kind": "custom",
+      "refersTo": "board-module-open",
+      "description": "Circuito abierto con cuenta atrás.",
+      "html": "<div class=\"ds-board-open\" role=\"img\" aria-label=\"Circuit breaker: OPEN (12 s)\"><span class=\"ds-lamp-w\"></span><span class=\"ds-cell-o\">O</span><span class=\"ds-cell-o\">P</span><span class=\"ds-cell-o\">E</span><span class=\"ds-cell-o\">N</span><span class=\"ds-count\">12 s</span></div>",
+      "css": ".ds-board-open{display:inline-flex;align-items:center;gap:2px;padding:5px 7px;background:#b0241c;border-radius:4px;color:#f2eee3}.ds-lamp-w{width:9px;height:9px;border-radius:50%;background:#fff;margin-right:6px}.ds-cell-o{min-width:.7em;padding:1px 1px 0;background:#8f1c15;border-radius:2px;font:600 17px/1.25 'Barlow Condensed',Barlow,sans-serif;text-align:center}.ds-count{margin-left:6px;font:600 15px/1 'Barlow Condensed',Barlow,sans-serif}"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campos del formulario de pago.",
+      "html": "<label class=\"ds-field\"><span>Importe</span><input class=\"ds-input\" value=\"40.00\"></label>",
+      "css": ".ds-field{display:grid;gap:4px;font:500 13px Barlow,system-ui,sans-serif;color:#434c55}.ds-input{min-height:36px;padding:6px 9px;border:1px solid #aeb7be;border-radius:4px;background:#fff;color:#14181c;font:400 14px Barlow,system-ui,sans-serif}.ds-input:hover{border-color:#5d6872}.ds-input:focus-visible{outline:2px solid #14181c;outline-offset:2px;box-shadow:0 0 0 5px #f5c400}"
+    },
+    {
+      "name": "Barra superior",
+      "kind": "nav",
+      "refersTo": "board-module",
+      "description": "Wordmark, persistencia, estado del SSE y Restaurar demo.",
+      "html": "<header class=\"ds-top\"><span class=\"ds-word\">PayAF</span><span class=\"ds-live\"><span class=\"ds-dot\"></span>En vivo</span></header>",
+      "css": ".ds-top{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#16181b;color:#f2eee3}.ds-word{font:600 26px/1 'Barlow Condensed',Barlow,sans-serif}.ds-live{display:inline-flex;align-items:center;gap:7px;font:400 13px Barlow,sans-serif}.ds-dot{width:8px;height:8px;border-radius:50%;background:#43d17f}"
+    }
+  ],
+  "narrative": {
+    "northStar": "El tablero de salidas del vestíbulo",
+    "overview": "El panel es el vestíbulo claro de una estación: suelo de piedra fría, paneles blancos donde se trabaja y, colgados encima, módulos negros de tablero de lamas que anuncian los estados. El dominio es el andén central del hexágono y cada pago «sale» por una pasarela. Es una superficie de modo Operate: la estructura es la de una herramienta y el mundo entra solo por la tipografía, la paleta, la densidad y un movimiento firma.\n\nRechaza el dashboard oscuro de observabilidad con un acento neón y la rejilla de tarjetas SaaS blanca sin carácter. Cada color y cada movimiento cuenta algo que ha pasado en el backend: si no hay traza, nada se ilumina.",
+    "keyCharacteristics": [
+      "Vestíbulo claro con módulos de tablero negros para los estados.",
+      "Un único amarillo de tablero para todo lo vivo.",
+      "Verde, ámbar y rojo reservados al circuit breaker y al resultado, siempre con texto.",
+      "Celdas de lamas que giran carácter a carácter cuando cambia un estado.",
+      "El hexágono en SVG como pieza central, con simetría izquierda (entrada) y derecha (salida)."
+    ],
+    "rules": [
+      { "name": "The One Live Color Rule", "body": "El amarillo solo marca lo que ocurre ahora (traza, foco, en curso). Si un elemento amarillo no responde a algo del backend o a la interacción, sobra.", "section": "colors" },
+      { "name": "The Inversion Rule", "body": "OPEN no se recolorea: el módulo entero se invierte a rojo con texto marfil y una lámpara blanca, y además dice «OPEN» y la cuenta atrás. El estado nunca depende solo del color.", "section": "colors" },
+      { "name": "The Code Is Data Rule", "body": "La monoespaciada solo para datos que se copian o se buscan (códigos, referencias, puertos). Nunca como disfraz «técnico» de un texto normal.", "section": "typography" },
+      { "name": "The Same Plate Rule", "body": "Las cuatro tarjetas de pasarela tienen exactamente la misma anatomía y escala (cabecera con módulo de estado, texto del breaker de dos líneas reservadas, datos y controles), para que los estados se comparen de un vistazo.", "section": "layout" }
+    ],
+    "dos": [
+      "Do usar el amarillo solo para lo vivo: traza, paso activo, foco, en curso.",
+      "Do acompañar cada color de estado con su texto (CLOSED, OPEN 12 s, HALF_OPEN; Aprobado, Error).",
+      "Do sacar todo lo que se ve de la API real; las pasarelas se anuncian como simuladas en el pie.",
+      "Do mantener idéntica la anatomía de las tarjetas de pasarela.",
+      "Do alinear duraciones y latencias a la derecha en cifras tabulares."
+    ],
+    "donts": [
+      "Don't usar violeta ni lavanda en la paleta propia (el logo de Stripe conserva sus colores, pequeño).",
+      "Don't dibujar logos: si una PSP no tiene icono real, su nombre en texto.",
+      "Don't animar nada que no cuente un cambio del backend, ni hacer aparecer contenido con fundidos al hacer scroll.",
+      "Don't poner etiquetas tipo «kicker» encima de los títulos ni modales de bienvenida.",
+      "Don't usar rutas absolutas en el front: todo es relativo (api/..., assets/...)."
+    ]
+  }
+}
