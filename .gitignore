@@ -13,3 +13,7 @@ target/
 .neon
 node_modules/
 node_modules/
+
+# Despliegue
+worker/app.jar
+worker/.wrangler/

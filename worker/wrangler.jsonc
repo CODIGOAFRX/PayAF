@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "payaf",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  // Igual que consigna: ruta del Worker en la zona, sin pasar por Vercel (hace falta para el SSE).
+  "routes": [
+    { "pattern": "pedrogomez.dev/proyecto/PayAF*", "zone_name": "pedrogomez.dev" },
+    { "pattern": "www.pedrogomez.dev/proyecto/PayAF*", "zone_name": "pedrogomez.dev" }
+  ],
+  "containers": [
+    {
+      "class_name": "PayafContainer",
+      "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      // Una sola instancia: el estado de la demo es compartido.
+      "max_instances": 1,
+      // Logs del contenedor (stdout de la JVM) en Workers Logs
+      "observability": { "logs": { "enabled": true } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "PAYAF", "class_name": "PayafContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PayafContainer"] }],
+  "observability": { "enabled": true }
+}

@@ -21,6 +21,12 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     }
 
     @Test
+    void limpiaBomYComillas() {
+        assertThat(DatabaseUrlEnvironmentPostProcessor.clean("﻿\"postgres://u:p@h/db\"\r\n"))
+                .isEqualTo("postgres://u:p@h/db");
+    }
+
+    @Test
     void conservaElPuerto() {
         Map<String, Object> props = DatabaseUrlEnvironmentPostProcessor.translate("postgres://u:p@localhost:5433/payaf");
         assertThat(props).containsEntry("PAYAF_DB_URL", "jdbc:postgresql://localhost:5433/payaf");

@@ -37,7 +37,20 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         if (raw == null || raw.isBlank()) {
             return;
         }
-        environment.getPropertySources().addFirst(new MapPropertySource("payafDatabaseUrl", translate(raw.trim())));
+        environment.getPropertySources().addFirst(new MapPropertySource("payafDatabaseUrl", translate(clean(raw))));
+    }
+
+    /**
+     * Quita espacios, comillas y el BOM (U+FEFF) que algunas herramientas de Windows añaden al
+     * guardar el secreto: {@code trim()} no lo considera espacio y rompería el esquema.
+     */
+    static String clean(String raw) {
+        String value = raw.replace("﻿", "").trim();
+        if (value.length() >= 2 && (value.startsWith("\"") && value.endsWith("\"")
+                || value.startsWith("'") && value.endsWith("'"))) {
+            value = value.substring(1, value.length() - 1).trim();
+        }
+        return value;
     }
 
     static Map<String, Object> translate(String raw) {
