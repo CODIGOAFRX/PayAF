@@ -6,6 +6,7 @@ import dev.pedrogomez.payaf.domain.event.CircuitOpened;
 import dev.pedrogomez.payaf.domain.event.DomainEvent;
 import dev.pedrogomez.payaf.domain.payment.AttemptOutcome;
 import dev.pedrogomez.payaf.domain.shared.GatewayId;
+import dev.pedrogomez.payaf.domain.shared.InvalidValueException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +80,34 @@ public final class CircuitBreaker {
     }
 
     /**
+     * Reconstruye un breaker guardado, sin emitir eventos (esos cambios ya se anunciaron en su
+     * día). Es la puerta que usa un {@code CircuitBreakerStore} persistente; el de memoria no la
+     * necesita porque conserva la instancia.
+     *
+     * @param config la configuración vigente, que manda sobre la que hubiera al guardarlo
+     * @throws InvalidValueException si en HALF_OPEN hay más pruebas en vuelo de las que admite {@code config}
+     */
+    public static CircuitBreaker restore(GatewayId gateway, CircuitBreakerConfig config, CircuitBreakerMemento memento) {
+        Objects.requireNonNull(memento, "el estado guardado no puede ser nulo");
+        CircuitBreaker breaker = new CircuitBreaker(gateway, config);
+        if (memento.trialsAcquiredAt().size() > config.halfOpenMaxTrials()) {
+            throw new InvalidValueException("El breaker de " + gateway + " tiene más pruebas en vuelo ("
+                    + memento.trialsAcquiredAt().size() + ") de las que admite la configuración");
+        }
+        breaker.state = memento.state();
+        breaker.consecutiveFailures = memento.consecutiveFailures();
+        breaker.openedAt = memento.openedAt().orElse(null);
+        breaker.trialsAcquiredAt.addAll(memento.trialsAcquiredAt());
+        return breaker;
+    }
+
+    /** El estado interno completo, para guardarlo (ver {@link #restore}). No lo hace avanzar. */
+    public CircuitBreakerMemento memento() {
+        return new CircuitBreakerMemento(state, consecutiveFailures, Optional.ofNullable(openedAt),
+                trialsAcquiredAt);
+    }
+
+    /**
      * ¿Admitiría ahora una petición? CLOSED siempre; OPEN nunca, salvo que haya vencido el
      * tiempo de apertura, en cuyo caso pasa a HALF_OPEN (y emite {@link CircuitHalfOpened});
      * HALF_OPEN mientras queden peticiones de prueba sin conceder.
@@ -90,6 +119,8 @@ public final class CircuitBreaker {
         Objects.requireNonNull(now, "el instante no puede ser nulo");
         if (state == CircuitState.OPEN && !now.isBefore(retryAtInstant())) {
             state = CircuitState.HALF_OPEN;
+            // El instante de apertura solo tiene sentido en OPEN (lo exige el memento).
+            openedAt = null;
             trialsAcquiredAt.clear();
             events.add(new CircuitHalfOpened(gateway, now));
         }

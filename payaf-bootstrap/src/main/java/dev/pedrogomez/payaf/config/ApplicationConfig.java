@@ -2,6 +2,8 @@ package dev.pedrogomez.payaf.config;
 
 import dev.pedrogomez.payaf.application.port.out.CircuitBreakerStore;
 import dev.pedrogomez.payaf.application.port.out.EventPublisher;
+import dev.pedrogomez.payaf.application.port.out.EventStream;
+import dev.pedrogomez.payaf.application.port.out.OutboxReader;
 import dev.pedrogomez.payaf.application.port.out.GatewayCatalog;
 import dev.pedrogomez.payaf.application.port.out.IdempotencyStore;
 import dev.pedrogomez.payaf.application.port.out.PaymentIdGenerator;
@@ -14,6 +16,7 @@ import dev.pedrogomez.payaf.application.service.PaymentOperationsService;
 import dev.pedrogomez.payaf.application.service.QueryGatewayHealthService;
 import dev.pedrogomez.payaf.application.service.QueryPaymentsService;
 import dev.pedrogomez.payaf.application.service.ReapStalePaymentsService;
+import dev.pedrogomez.payaf.application.service.RelayOutboxService;
 import dev.pedrogomez.payaf.domain.payment.PaymentId;
 import dev.pedrogomez.payaf.domain.routing.CircuitBreakerConfig;
 import java.time.Clock;
@@ -28,7 +31,8 @@ import org.springframework.context.annotation.Configuration;
  * <strong>Es el único sitio donde la aplicación toca Spring.</strong> Los servicios no llevan
  * {@code @Service} ni {@code @Autowired}: son clases Java normales que reciben sus puertos por
  * constructor, y aquí se construyen a mano con los adaptadores que haya en el contexto (los de
- * memoria con el perfil {@code memory}, ver {@link MemoryAdaptersConfig}; el simulador de PSP, ver
+ * memoria con el perfil {@code memory}, ver {@link MemoryAdaptersConfig}, o los de PostgreSQL con el
+ * perfil {@code postgres}, ver {@link PostgresAdaptersConfig}; el simulador de PSP, ver
  * {@link GatewaySimConfig}). Así la aplicación se puede usar y probar sin Spring, y cambiar de
  * adaptador es cambiar qué configuración se carga, no tocar los servicios.
  * <p>
@@ -94,5 +98,11 @@ public class ApplicationConfig {
                                                       EventPublisher events, TransactionRunner transactions,
                                                       Clock clock) {
         return new ReapStalePaymentsService(payments, idempotency, events, transactions, clock);
+    }
+
+    /** El relay del outbox: lee del {@code OutboxReader} del perfil activo y entrega al broadcaster. */
+    @Bean
+    RelayOutboxService relayOutboxService(OutboxReader outbox, EventStream stream, TransactionRunner transactions) {
+        return new RelayOutboxService(outbox, stream, transactions);
     }
 }

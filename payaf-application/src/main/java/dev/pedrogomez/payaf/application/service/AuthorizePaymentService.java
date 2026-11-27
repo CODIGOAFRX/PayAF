@@ -116,6 +116,8 @@ import java.util.Optional;
  */
 public final class AuthorizePaymentService implements AuthorizePaymentUseCase {
 
+    private static final System.Logger LOG = System.getLogger(AuthorizePaymentService.class.getName());
+
     /** Motivo de fallo cuando ninguna pasarela ha podido atender el pago. */
     public static final String NO_GATEWAY_AVAILABLE = "NO_GATEWAY_AVAILABLE";
 
@@ -310,6 +312,10 @@ public final class AuthorizePaymentService implements AuthorizePaymentUseCase {
         try {
             routeUnguarded(payment, breakers, progress);
         } catch (Exception e) {
+            // Sin este registro, un fallo nuestro acabaría en ROUTING_ERROR sin dejar rastro.
+            LOG.log(System.Logger.Level.WARNING,
+                    () -> "Fallo durante el enrutado del pago " + payment.id().value() + "; se activa la red de seguridad",
+                    e);
             recoverFromRoutingFailure(payment, progress);
         }
         return progress;

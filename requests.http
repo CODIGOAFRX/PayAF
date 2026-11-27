@@ -1,0 +1,56 @@
+### PayAF: flujo completo (cliente HTTP de IntelliJ o la extensión REST Client de VS Code)
+# Arranca antes la aplicación (perfil memory o postgres) en el puerto 8080.
+@base = http://localhost:8080
+
+### 1. Autorizar: 201 con el pago, la decisión de enrutado y los intentos (gana redsys, la más barata en ES)
+# @name autorizar
+POST {{base}}/api/payments
+Idempotency-Key: pedido-1001
+Content-Type: application/json
+
+{"amount": "40.00", "currency": "EUR", "country": "ES", "merchantReference": "pedido-1001"}
+
+### 2. Replay: la misma clave y la misma orden → 200 con Idempotent-Replayed: true, sin llamar a ninguna PSP
+POST {{base}}/api/payments
+Idempotency-Key: pedido-1001
+Content-Type: application/json
+
+{"amount": "40.00", "currency": "EUR", "country": "ES", "merchantReference": "pedido-1001"}
+
+### 3. Capturar (redsys manda después un webhook firmado: ALREADY_IN_STATE)
+POST {{base}}/api/payments/{{autorizar.response.body.$.payment.id}}/capture
+
+### 4. Reembolsar una parte
+POST {{base}}/api/payments/{{autorizar.response.body.$.payment.id}}/refunds
+Content-Type: application/json
+
+{"amount": "15.00"}
+
+### 5. Consultar el pago
+GET {{base}}/api/payments/{{autorizar.response.body.$.payment.id}}
+
+### 6. Tumbar redsys (responde HTTP 503)
+PUT {{base}}/api/chaos/redsys
+Content-Type: application/json
+
+{"down": true}
+
+### 7. Failover: el intento en redsys falla con ERROR y el pago lo autoriza la siguiente (adyen)
+POST {{base}}/api/payments
+Idempotency-Key: pedido-1002
+Content-Type: application/json
+
+{"amount": "25.00", "currency": "EUR", "country": "ES", "merchantReference": "pedido-1002"}
+
+### 8. Salud de las pasarelas (tras 3 fallos seguidos, redsys queda OPEN y se descarta con CIRCUIT_OPEN)
+GET {{base}}/api/gateways
+
+### 9. Volver a dejar redsys bien
+DELETE {{base}}/api/chaos/redsys
+
+### 10. Los últimos pagos
+GET {{base}}/api/payments?limit=10
+
+### 11. Eventos en directo (SSE); en terminal: curl -N http://localhost:8080/api/events/stream
+GET {{base}}/api/events/stream
+Accept: text/event-stream

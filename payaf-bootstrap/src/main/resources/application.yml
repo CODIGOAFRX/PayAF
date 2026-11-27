@@ -18,6 +18,20 @@ payaf:
   # Reaper de pagos huérfanos (cada 30 s, PENDING de más de 2 min)
   reaper:
     enabled: true
+  # Relay del outbox (cada 500 ms) en los dos perfiles
+  outbox:
+    relay:
+      enabled: true
+  # Las PSP simuladas mandan webhooks firmados tras capturar y reembolsar
+  sim:
+    webhooks:
+      enabled: true
+  # Secretos de los webhooks (los mismos para firmar en el simulador y verificar en /webhooks)
+  webhooks:
+    secrets:
+      stripe: ${PAYAF_STRIPE_WEBHOOK_SECRET:whsec_payaf_demo}
+      adyen: ${PAYAF_ADYEN_HMAC_KEY:adyen_payaf_demo}
+      redsys: ${PAYAF_REDSYS_SECRET:redsys_payaf_demo}
 
 management:
   endpoints:
