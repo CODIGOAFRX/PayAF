@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.pedrogomez.payaf</groupId>
+        <artifactId>payaf-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>payaf-adapters</artifactId>
+    <packaging>pom</packaging>
+    <name>PayAF :: Adapters</name>
+    <description>Agregador de los adaptadores de entrada y salida</description>
+
+    <modules>
+        <module>payaf-adapter-in-rest</module>
+        <module>payaf-adapter-in-webhook</module>
+        <module>payaf-adapter-in-cli</module>
+        <module>payaf-adapter-out-gateway-sim</module>
+        <module>payaf-adapter-out-persistence-jpa</module>
+        <module>payaf-adapter-out-persistence-memory</module>
+        <module>payaf-adapter-out-outbox</module>
+    </modules>
+</project>

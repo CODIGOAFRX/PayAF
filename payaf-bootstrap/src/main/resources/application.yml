@@ -1,0 +1,53 @@
+# Configuración común a todos los perfiles
+spring:
+  application:
+    name: payaf
+  profiles:
+    # Sin perfil explícito se arranca en memoria, sin base de datos
+    default: memory
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+---
+# Perfil memory: persistencia en memoria. Se desactiva toda la autoconfiguración
+# de base de datos para que la aplicación arranque sin PostgreSQL.
+spring:
+  config:
+    activate:
+      on-profile: memory
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+      - org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+
+---
+# Perfil postgres: PostgreSQL local (docker compose) o remoto mediante variables de entorno.
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  datasource:
+    url: ${PAYAF_DB_URL:jdbc:postgresql://localhost:5433/payaf}
+    username: ${PAYAF_DB_USER:payaf}
+    password: ${PAYAF_DB_PASSWORD:payaf}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # El esquema lo gestiona Flyway; Hibernate solo lo valida
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
